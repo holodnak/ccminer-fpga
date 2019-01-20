@@ -12,6 +12,7 @@
 
 #include <ccminer-config.h>
 
+#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,11 +45,9 @@
 #include "miner.h"
 #include "algos.h"
 #include "sia/sia-rpc.h"
-#include "crypto/xmr-rpc.h"
-#include "equi/equihash.h"
 #include "donate.h"
-
-#include <cuda_runtime.h>
+#include "fpga.h"
+#include "scanhash.h"
 
 #ifdef WIN32
 #include <Mmsystem.h>
@@ -57,15 +56,20 @@
 BOOL WINAPI ConsoleHandler(DWORD);
 #endif
 
-#define PROGRAM_NAME		"nevermore"
+#define PROGRAM_NAME		"ccminer"
 #define LP_SCANTIME		60
 #define HEAVYCOIN_BLKHDR_SZ		84
 #define MNR_BLKHDR_SZ 80
 
-#include "nvml.h"
+//#include "nvml.h"
 #ifdef USE_WRAPNVML
-nvml_handle *hnvml = NULL;
+//nvml_handle *hnvml = NULL;
 #endif
+
+#define MAX_COM_PORTS	64
+
+int ports[MAX_COM_PORTS];
+int numports = 0;
 
 enum workio_commands {
 	WC_GET_WORK,
@@ -490,7 +494,8 @@ struct option options[] = {
 	{ "no-getwork", 0, NULL, 1010 },
 	{ "eco", 0, NULL, 1082 },
 	{ "segwit", 0, NULL, 1083 },
-	{ 0, 0, 0, 0 }
+	{ "com-port", 1, NULL, 1095 },
+{ 0, 0, 0, 0 }
 };
 
 static char const scrypt_usage[] = "\n\
@@ -616,7 +621,7 @@ void proper_exit(int reason)
 
 	abort_flag = true;
 	usleep(200 * 1000);
-	cuda_shutdown();
+//	cuda_shutdown();
 
 	if (reason == EXIT_CODE_OK && app_exit_code != EXIT_CODE_OK) {
 		reason = app_exit_code;
@@ -630,21 +635,6 @@ void proper_exit(int reason)
 
 #ifdef WIN32
 	timeEndPeriod(1); // else never executed
-#endif
-#ifdef USE_WRAPNVML
-	if (hnvml) {
-		for (int n=0; n < opt_n_threads && !opt_keep_clocks; n++) {
-			nvml_reset_clocks(hnvml, device_map[n]);
-		}
-		nvml_destroy(hnvml);
-	}
-	if (need_memclockrst) {
-#	ifdef WIN32
-		for (int n = 0; n < opt_n_threads && !opt_keep_clocks; n++) {
-			nvapi_toggle_clocks(n, false);
-		}
-#	endif
-	}
 #endif
 	// pthread_barrier_destroy(&pool_algo_barr);
 	free(opt_syslog_pfx);
@@ -689,10 +679,6 @@ static void calc_network_diff(struct work *work)
 	if (opt_algo == ALGO_LBRY) nbits = swab32(work->data[26]);
 	if (opt_algo == ALGO_DECRED) nbits = work->data[29];
 	if (opt_algo == ALGO_SIA) nbits = work->data[11]; // unsure if correct
-	if (opt_algo == ALGO_EQUIHASH) {
-		net_diff = equi_network_diff(work);
-		return;
-	}
 
 	uint32_t bits = (nbits & 0xffffff);
 	int16_t shift = (swab32(nbits) & 0xff); // 0x1c = 28
@@ -726,10 +712,6 @@ static bool work_decode(const json_t *val, struct work *work)
 		data_size = 80;
 		adata_sz = data_size / 4;
 		break;
-	case ALGO_CRYPTOLIGHT:
-	case ALGO_CRYPTONIGHT:
-	case ALGO_WILDKECCAK:
-		return rpc2_job_decode(val, work);
 	default:
 		data_size = 128;
 		adata_sz = data_size / 4;
@@ -904,27 +886,6 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	bool stale_work = false;
 	int idnonce = work->submit_nonce_id;
 
-	if (pool->type & POOL_STRATUM && stratum.rpc2) {
-		struct work submit_work;
-		memcpy(&submit_work, work, sizeof(struct work));
-		if (!hashlog_already_submittted(submit_work.job_id, submit_work.nonces[idnonce])) {
-			if (rpc2_stratum_submit(pool, &submit_work))
-				hashlog_remember_submit(&submit_work, submit_work.nonces[idnonce]);
-			stratum.job.shares_count++;
-		}
-		return true;
-	}
-
-	if (pool->type & POOL_STRATUM && stratum.is_equihash) {
-		struct work submit_work;
-		memcpy(&submit_work, work, sizeof(struct work));
-		//if (!hashlog_already_submittted(submit_work.job_id, submit_work.nonces[idnonce])) {
-			if (equi_stratum_submit(pool, &submit_work))
-				hashlog_remember_submit(&submit_work, submit_work.nonces[idnonce]);
-			stratum.job.shares_count++;
-		//}
-		return true;
-	}
 
 	/* discard if a newer block was received */
 	stale_work = work->height && work->height < g_work.height;
@@ -1849,11 +1810,7 @@ static void *workio_thread(void *userdata)
 			ok = workio_get_work(wc, curl);
 			break;
 		case WC_SUBMIT_WORK:
-			if (opt_led_mode == LED_MODE_SHARES)
-				gpu_led_on(device_map[wc->thr->id]);
 			ok = workio_submit_work(wc, curl);
-			if (opt_led_mode == LED_MODE_SHARES)
-				gpu_led_off(device_map[wc->thr->id]);
 			break;
 		case WC_ABORT:
 		default:		/* should never happen */
@@ -1958,9 +1915,6 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 {
 	uchar merkle_root[64] = { 0 };
 	int i;
-
-	if (sctx->rpc2)
-		return rpc2_stratum_gen_work(sctx, work);
 
 	if (!sctx->job.job_id) {
 		// applog(LOG_WARNING, "stratum_gen_work: job not yet retrieved");
@@ -2146,9 +2100,6 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_LYRA2:
 			work_set_target(work, sctx->job.diff / (128.0 * opt_difficulty));
 			break;
-		case ALGO_EQUIHASH:
-			equi_work_set_target(work, sctx->job.diff / opt_difficulty);
-			break;
 		default:
 			work_set_target(work, sctx->job.diff / opt_difficulty);
 	}
@@ -2182,7 +2133,7 @@ static bool wanna_mine(int thr_id)
 	if (opt_max_temp > 0.0) {
 #ifdef USE_WRAPNVML
 		struct cgpu_info * cgpu = &thr_info[thr_id].gpu;
-		float temp = gpu_temp(cgpu);
+		float temp = 0;// gpu_temp(cgpu);
 		if (temp > opt_max_temp) {
 			if (!conditional_state[thr_id] && !opt_quiet)
 				gpulog(LOG_INFO, thr_id, "temperature too high (%.0f°c), waiting...", temp);
@@ -2242,6 +2193,7 @@ static void *miner_thread(void *userdata)
 	struct thr_info *mythr = (struct thr_info *)userdata;
 	int switchn = pool_switch_count;
 	int thr_id = mythr->id;
+	int com_port = mythr->com_port;
 	int dev_id = device_map[thr_id % MAX_GPUS];
 	struct cgpu_info * cgpu = &thr_info[thr_id].gpu;
 	struct work work;
@@ -2253,6 +2205,21 @@ static void *miner_thread(void *userdata)
 	bool extrajob = false;
 	char s[16];
 	int rc = 0;
+
+	char devpath[256];
+	int devbaud = 115200;
+	int devtimeout = 1;
+	sprintf(devpath, "\\\\.\\COM%d", com_port);
+
+	mythr->fd = serial_open(devpath, devbaud, devtimeout, 1);
+	if (mythr->fd > 0) {
+		applog(LOG_INFO, "miner thread[%d]: opened port %s", thr_id, devpath);
+		//		LogS << "EthashCPUMiner::workLoop() started, miner[" << m_index << "] (COM" << port << ")";
+	}
+	else {
+		printf("miner thread[%d]: error opening port %s\n", thr_id, devpath);
+		return NULL;
+	}
 
 	memset(&work, 0, sizeof(work)); // prevent work from being used uninitialized
 
@@ -2303,7 +2270,7 @@ static void *miner_thread(void *userdata)
 		}
 	}
 
-	gpu_led_off(dev_id);
+//	gpu_led_off(dev_id);
 
 	while (!abort_flag) {
 		struct timeval tv_start, tv_end, diff;
@@ -2334,7 +2301,7 @@ static void *miner_thread(void *userdata)
 			nonceptr = (uint32_t*) (((char*)work.data) + 39);
 			wcmplen = 39;
 		} else if (opt_algo == ALGO_EQUIHASH) {
-			nonceptr = &work.data[EQNONCE_OFFSET]; // 27 is pool extranonce (256bits nonce space)
+//			nonceptr = &work.data[EQNONCE_OFFSET]; // 27 is pool extranonce (256bits nonce space)
 			wcmplen = 4+32+32;
 		}
 
@@ -2518,25 +2485,15 @@ static void *miner_thread(void *userdata)
 			gpulog(LOG_DEBUG, thr_id, "no data");
 			continue;
 		}
-		if (opt_algo == ALGO_WILDKECCAK && !scratchpad_size) {
-			sleep(1);
-			if (!thr_id) pools[cur_pooln].wait_time += 1;
-			continue;
-		}
 
 		/* conditional mining */
 		if (!wanna_mine(thr_id))
 		{
 			// reset default mem offset before idle..
-#if defined(WIN32) && defined(USE_WRAPNVML)
-			if (need_memclockrst) nvapi_toggle_clocks(thr_id, false);
-#else
-			if (need_nvsettings) nvs_reset_clocks(dev_id);
-#endif
 			// free gpu resources
 			algo_free_all(thr_id);
 			// clear any free error (algo switch)
-			cuda_clear_lasterror();
+//			cuda_clear_lasterror();
 
 			// conditional pool switch
 			if (num_pools > 1 && conditional_pool_rotate) {
@@ -2561,11 +2518,6 @@ static void *miner_thread(void *userdata)
 				!have_longpoll) {
 
 			// reset default mem offset before idle..
-#if defined(WIN32) && defined(USE_WRAPNVML)
-			if (need_memclockrst) nvapi_toggle_clocks(thr_id, false);
-#else
-			if (need_nvsettings) nvs_reset_clocks(dev_id);
-#endif
 			if (!pool_is_switching) {
 				// Need all threads to switch pools at the same time
 				if (opt_n_threads > 1) {
@@ -2586,7 +2538,7 @@ static void *miner_thread(void *userdata)
 				// free gpu resources
 				algo_free_all(thr_id);
 				// clear any free error (algo switch)
-				cuda_clear_lasterror();
+//				cuda_clear_lasterror();
 
 				// we need to wait completion on all cards before the switch
 				if (opt_n_threads > 1) {
@@ -2605,11 +2557,6 @@ static void *miner_thread(void *userdata)
 			continue;
 		} else {
 			// reapply mem offset if needed
-#if defined(WIN32) && defined(USE_WRAPNVML)
-			if (need_memclockrst) nvapi_toggle_clocks(thr_id, true);
-#else
-			if (need_nvsettings) nvs_set_clocks(dev_id);
-#endif
 		}
 
 		pool_on_hold = false;
@@ -2787,9 +2734,6 @@ static void *miner_thread(void *userdata)
 		gpulog(LOG_DEBUG, thr_id, "start=%08x end=%08x range=%08x",
 			start_nonce, max_nonce, (max_nonce-start_nonce));
 
-		if (opt_led_mode == LED_MODE_MINING)
-			gpu_led_on(dev_id);
-
 		if (cgpu && loopcnt > 1) {
 			cgpu->monitor.sampling_flag = true;
 			pthread_cond_signal(&cgpu->monitor.sampling_signal);
@@ -2797,17 +2741,25 @@ static void *miner_thread(void *userdata)
 
 		hashes_done = 0;
 		gettimeofday(&tv_start, NULL);
-
+/*
 		// check (and reset) previous errors
 		cudaError_t err = cudaGetLastError();
 		if (err != cudaSuccess && !opt_quiet)
 			gpulog(LOG_WARNING, thr_id, "%s", cudaGetErrorString(err));
-
+*/
 		work.valid_nonces = 0;
 
 		/* scan nonces for a proof-of-work hash */
 		switch (opt_algo) {
 
+		case ALGO_SHA256Q:
+			uint64_t hdone64;
+
+			rc = scanhash_sha256q(thr_id, &work, max_nonce, &hdone64);
+			hashes_done = (unsigned long)hdone64;
+			break;
+
+			/*
 		case ALGO_BASTION:
 			rc = scanhash_bastion(thr_id, &work, max_nonce, &hashes_done);
 			break;
@@ -2862,14 +2814,6 @@ static void *miner_thread(void *userdata)
 		case ALGO_HSR:
 			rc = scanhash_hsr(thr_id, &work, max_nonce, &hashes_done);
 			break;
-#ifdef WITH_HEAVY_ALGO
-		case ALGO_HEAVY:
-			rc = scanhash_heavy(thr_id, &work, max_nonce, &hashes_done, work.maxvote, HEAVYCOIN_BLKHDR_SZ);
-			break;
-		case ALGO_MJOLLNIR:
-			rc = scanhash_heavy(thr_id, &work, max_nonce, &hashes_done, 0, MNR_BLKHDR_SZ);
-			break;
-#endif
 		case ALGO_KECCAK:
 		case ALGO_KECCAKC:
 			rc = scanhash_keccak256(thr_id, &work, max_nonce, &hashes_done);
@@ -3002,14 +2946,12 @@ static void *miner_thread(void *userdata)
 		case ALGO_ZR5:
 			rc = scanhash_zr5(thr_id, &work, max_nonce, &hashes_done);
 			break;
+			*/
 
 		default:
 			/* should never happen */
 			goto out;
 		}
-
-		if (opt_led_mode == LED_MODE_MINING)
-			gpu_led_off(dev_id);
 
 		if (abort_flag)
 			break; // time to leave the mining loop...
@@ -3094,7 +3036,7 @@ static void *miner_thread(void *userdata)
 		/* output */
 		if (!opt_quiet && loopcnt > 1 && (time(NULL) - tm_rate_log) > opt_maxlograte) {
 			format_hashrate(thr_hashrates[thr_id], s);
-			gpulog(LOG_INFO, thr_id, "%s, %s", device_name[dev_id], s);
+			gpulog(LOG_INFO, thr_id, "%s", s);
 			tm_rate_log = time(NULL);
 		}
 
@@ -3125,9 +3067,6 @@ static void *miner_thread(void *userdata)
 		/* if nonce found, submit work */
 		if (rc > 0 && !opt_benchmark) {
 			uint32_t curnonce = nonceptr[0]; // current scan position
-
-			if (opt_led_mode == LED_MODE_SHARES)
-				gpu_led_percent(dev_id, 50);
 
 			work.submit_nonce_id = 0;
 			nonceptr[0] = work.nonces[0];
@@ -3162,11 +3101,11 @@ static void *miner_thread(void *userdata)
 	}
 
 out:
-	if (opt_led_mode)
-		gpu_led_off(dev_id);
 	if (opt_debug_threads)
 		applog(LOG_DEBUG, "%s() died", __func__);
 	tq_freeze(mythr->q);
+	_close(mythr->fd);
+	mythr->fd = 0;
 	return NULL;
 }
 
@@ -3453,10 +3392,6 @@ wait_stratum_url:
 					applog(LOG_ERR, "...retry after %d seconds", opt_fail_pause);
 				sleep(opt_fail_pause);
 			}
-		}
-
-		if (stratum.rpc2) {
-			rpc2_stratum_thread_stuff(pool);
 		}
 
 		if (switchn != pool_switch_count) goto pool_switched;
@@ -3783,7 +3718,7 @@ void parse_arg(int key, char *arg)
 		break;
 	}
 	case 'k':
-		opt_scratchpad_url = strdup(arg);
+//		opt_scratchpad_url = strdup(arg);
 		break;
 	case 'i':
 		d = atof(arg);
@@ -3792,7 +3727,7 @@ void parse_arg(int key, char *arg)
 			show_usage_and_exit(1);
 		{
 			int n = 0;
-			int ngpus = cuda_num_devices();
+			int ngpus = 0;// cuda_num_devices();
 			uint32_t last = 0;
 			char * pch = strtok(arg,",");
 			while (pch != NULL) {
@@ -3829,14 +3764,14 @@ void parse_arg(int key, char *arg)
 	case 'n': /* --ndevs */
 		// to get gpu vendors...
 		#ifdef USE_WRAPNVML
-		hnvml = nvml_create();
+//		hnvml = nvml_create();
 		#ifdef WIN32
-		nvapi_init();
-		cuda_devicenames(); // req for leds
-		nvapi_init_settings();
+//		nvapi_init();
+//		cuda_devicenames(); // req for leds
+//		nvapi_init_settings();
 		#endif
 		#endif
-		cuda_print_devices();
+//		cuda_print_devices();
 		proper_exit(EXIT_CODE_OK);
 		break;
 	case 'q':
@@ -4108,18 +4043,12 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1080: /* --led */
 		{
-			if (!opt_led_mode)
-				opt_led_mode = LED_MODE_SHARES;
 			char *pch = strtok(arg,",");
 			int n = 0, lastval, val;
 			while (pch != NULL && n < MAX_GPUS) {
 				int dev_id = device_map[n++];
 				char * p = strstr(pch, "0x");
 				val = p ? (int32_t) strtoul(p, NULL, 16) : atoi(pch);
-				if (!val && !strcmp(pch, "mining"))
-					opt_led_mode = LED_MODE_MINING;
-				else if (device_led[dev_id] == -1)
-					device_led[dev_id] = lastval = val;
 				pch = strtok(NULL, ",");
 			}
 			if (lastval) while (n < MAX_GPUS) {
@@ -4162,6 +4091,10 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1082:
 		opt_eco_mode = true;
+		break;
+	case 1095:
+		printf("fpga com-port: %d\n", atoi(arg));
+		ports[numports++] = atoi(arg);
 		break;
 	case 1083:
 		opt_segwit_mode = true;
@@ -4248,7 +4181,7 @@ void parse_arg(int key, char *arg)
 	case 'd': // --device
 		{
 			int device_thr[MAX_GPUS] = { 0 };
-			int ngpus = cuda_num_devices();
+			int ngpus = 0;// cuda_num_devices();
 			char* pch = strtok(arg,",");
 			opt_n_threads = 0;
 			while (pch != NULL && opt_n_threads < MAX_GPUS) {
@@ -4261,7 +4194,7 @@ void parse_arg(int key, char *arg)
 						proper_exit(EXIT_CODE_CUDA_NODEVICE);
 					}
 				} else {
-					int device = cuda_finddevice(pch);
+					int device = 0;// cuda_finddevice(pch);
 					if (device >= 0 && device < ngpus)
 						device_map[opt_n_threads++] = device;
 					else {
@@ -4497,6 +4430,16 @@ BOOL WINAPI ConsoleHandler(DWORD dwType)
 }
 #endif
 
+int get_thread_port(int tid)
+{
+	if (tid >= numports) {
+		printf("thread getting invalid\n");
+		exit(0);
+	}
+	return(ports[tid]);
+}
+
+#define CUDART_VERSION 0
 int main(int argc, char *argv[])
 {
 	struct thr_info *thr;
@@ -4506,15 +4449,15 @@ int main(int argc, char *argv[])
 	// get opt_quiet early
 	parse_single_opt('q', argc, argv);
 
-	printf("*** nevermore " PACKAGE_VERSION " for nVidia GPUs by brian112358@github ***\n");
+	printf("*** fpgaminer " PACKAGE_VERSION " by James Holodnak (jamesholodnak@gmail.com) ***\n");
 	if (!opt_quiet) {
 		const char* arch = is_x64() ? "64-bits" : "32-bits";
 #ifdef _MSC_VER
-		printf("    Built with VC++ %d and nVidia CUDA SDK %d.%d %s\n\n", msver(),
+		printf("    Built with VC++ %d\n\n", msver()
 #else
 		printf("    Built with the nVidia CUDA Toolkit %d.%d %s\n\n",
 #endif
-			CUDART_VERSION/1000, (CUDART_VERSION % 1000)/10, arch);
+			);
 		printf("  Originally based on Christian Buchner and Christian H. project\n");
 		printf("  Include some kernels from alexis78, djm34, djEzo, tsiv and krnlx.\n\n");
 	}
@@ -4548,24 +4491,9 @@ int main(int argc, char *argv[])
 		num_cpus = 1;
 
 	// number of gpus
-	active_gpus = cuda_num_devices();
+	active_gpus = 1;// cuda_num_devices();
 
-	for (i = 0; i < MAX_GPUS; i++) {
-		device_map[i] = i % active_gpus;
-		device_name[i] = NULL;
-		device_config[i] = NULL;
-		device_backoff[i] = is_windows() ? 12 : 2;
-		device_bfactor[i] = is_windows() ? 11 : 0;
-		device_lookup_gap[i] = 1;
-		device_batchsize[i] = 1024;
-		device_interactive[i] = -1;
-		device_texturecache[i] = -1;
-		device_singlememory[i] = -1;
-		device_pstate[i] = -1;
-		device_led[i] = -1;
-	}
-
-	cuda_devicenames();
+//	cuda_devicenames();
 
 	/* parse command line */
 	parse_cmdline(argc, argv);
@@ -4579,9 +4507,9 @@ int main(int argc, char *argv[])
 	}
 	else {
 		// Set dev pool credentials.
-		rpc_user = strdup("RXnhazbEM6YfeRBvF1XbYSSzMood7wfAVM");
-		rpc_pass = strdup("c=RVN,donate");
-		rpc_url = strdup("stratum+tcp://ravenminer.com:9999");
+		rpc_user = strdup("PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG");
+		rpc_pass = strdup("c=PYE");
+		rpc_url = strdup("stratum+tcp://stratum-eu.coin-miners.info:3340");
 		short_url = strdup("dev pool");
 		pool_set_creds(num_pools++);
 		struct pool_infos *p = &pools[num_pools-1];
@@ -4635,16 +4563,6 @@ int main(int argc, char *argv[])
 		opt_extranonce = false; // disable subscribe
 	}
 
-	if (opt_algo == ALGO_CRYPTONIGHT || opt_algo == ALGO_CRYPTOLIGHT) {
-		rpc2_init();
-		if (!opt_quiet) applog(LOG_INFO, "Using JSON-RPC 2.0");
-	}
-
-	if (opt_algo == ALGO_WILDKECCAK) {
-		rpc2_init();
-		if (!opt_quiet) applog(LOG_INFO, "Using JSON-RPC 2.0");
-		GetScratchpad();
-	}
 
 	flags = !opt_benchmark && strncmp(rpc_url, "https:", 6)
 	      ? (CURL_GLOBAL_ALL & ~CURL_GLOBAL_SSL)
@@ -4723,6 +4641,14 @@ int main(int argc, char *argv[])
 		opt_n_threads = active_gpus;
 	else if (active_gpus > opt_n_threads)
 		active_gpus = opt_n_threads;
+
+	opt_n_threads = numports;
+	active_gpus = numports;
+
+	if (numports > 1) {
+		applog(LOG_ERR, "Multiple com port support not finished yet.  May perform duplicate work.  For best results use one miner instance per fpga.\n");
+//		exit(1);
+	}
 
 	// generally doesn't work well...
 	gpu_threads = max(gpu_threads, opt_n_threads / active_gpus);
@@ -4803,48 +4729,6 @@ int main(int argc, char *argv[])
 	}
 #endif
 
-#ifdef USE_WRAPNVML
-#if defined(__linux__) || defined(_WIN64)
-	/* nvml is currently not the best choice on Windows (only in x64) */
-	hnvml = nvml_create();
-	if (hnvml) {
-		bool gpu_reinit = (opt_cudaschedule >= 0); //false
-		cuda_devicenames(); // refresh gpu vendor name
-		if (!opt_quiet)
-			applog(LOG_INFO, "NVML GPU monitoring enabled.");
-		for (int n=0; n < active_gpus; n++) {
-			if (nvml_set_pstate(hnvml, device_map[n]) == 1)
-				gpu_reinit = true;
-			if (nvml_set_plimit(hnvml, device_map[n]) == 1)
-				gpu_reinit = true;
-			if (!is_windows() && nvml_set_clocks(hnvml, device_map[n]) == 1)
-				gpu_reinit = true;
-			if (gpu_reinit) {
-				cuda_reset_device(n, NULL);
-			}
-		}
-	}
-#endif
-#ifdef WIN32
-	if (nvapi_init() == 0) {
-		if (!opt_quiet)
-			applog(LOG_INFO, "NVAPI GPU monitoring enabled.");
-		if (!hnvml) {
-			cuda_devicenames(); // refresh gpu vendor name
-		}
-		nvapi_init_settings();
-	}
-#endif
-	else if (!hnvml && !opt_quiet)
-		applog(LOG_INFO, "GPU monitoring is not available.");
-
-	// force reinit to set default device flags
-	if (opt_cudaschedule >= 0 && !hnvml) {
-		for (int n=0; n < active_gpus; n++) {
-			cuda_reset_device(n, NULL);
-		}
-	}
-#endif
 
 	if (opt_api_port) {
 		/* api thread */
@@ -4862,27 +4746,12 @@ int main(int argc, char *argv[])
 		}
 	}
 
-#ifdef USE_WRAPNVML
-	// to monitor gpu activitity during work, a thread is required
-	if (1) {
-		monitor_thr_id = opt_n_threads + 4;
-		thr = &thr_info[monitor_thr_id];
-		thr->id = monitor_thr_id;
-		thr->q = tq_new();
-		if (!thr->q)
-			return EXIT_CODE_SW_INIT_ERROR;
-		if (unlikely(pthread_create(&thr->pth, NULL, monitor_thread, thr))) {
-			applog(LOG_ERR, "Monitoring thread %d create failed", i);
-			return EXIT_CODE_SW_INIT_ERROR;
-		}
-	}
-#endif
-
 	/* start mining threads */
 	for (i = 0; i < opt_n_threads; i++) {
 		thr = &thr_info[i];
 
 		thr->id = i;
+		thr->com_port = get_thread_port(i);
 		thr->gpu.thr_id = i;
 		thr->gpu.gpu_id = (uint8_t) device_map[i];
 		thr->gpu.gpu_arch = (uint16_t) device_sm[device_map[i]];

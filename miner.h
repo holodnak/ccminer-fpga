@@ -503,6 +503,8 @@ struct thr_info {
 	pthread_t	pth;
 	struct thread_q	*q;
 	struct cgpu_info gpu;
+	int com_port;
+	int fd;
 };
 
 struct work_restart {
@@ -571,6 +573,7 @@ extern uint32_t gpus_intensity[MAX_GPUS];
 extern int opt_cudaschedule;
 
 // cuda.cpp
+/*
 int cuda_num_devices();
 void cuda_devicenames();
 void cuda_reset_device(int thr_id, bool *init);
@@ -588,6 +591,7 @@ double throughput2intensity(uint32_t throughput);
 void cuda_log_lasterror(int thr_id, const char* func, int line);
 void cuda_clear_lasterror();
 #define CUDA_LOG_ERROR() cuda_log_lasterror(thr_id, __func__, __LINE__)
+*/
 
 #define CL_N    "\x1B[0m"
 #define CL_RED  "\x1B[31m"

@@ -167,9 +167,9 @@ void gpulog(int prio, int thr_id, const char *fmt, ...)
 		return;
 
 	if (gpu_threads > 1)
-		len = snprintf(pfmt, 128, "GPU T%d: %s", thr_id, fmt);
+		len = snprintf(pfmt, 128, "FPGA T%d: %s", thr_id, fmt);
 	else
-		len = snprintf(pfmt, 128, "GPU #%d: %s", dev_id, fmt);
+		len = snprintf(pfmt, 128, "FPGA #%d: %s", dev_id, fmt);
 	pfmt[sizeof(pfmt)-1]='\0';
 
 	va_start(ap, fmt);
@@ -1227,8 +1227,6 @@ bool stratum_subscribe(struct stratum_ctx *sctx)
 	json_error_t err;
 	bool ret = false, retry = false;
 
-	if (sctx->rpc2) return true;
-
 start:
 	s = (char*)malloc(128 + (sctx->session_id ? strlen(sctx->session_id) : 0));
 	if (retry)
@@ -1319,9 +1317,6 @@ bool stratum_authorize(struct stratum_ctx *sctx, const char *user, const char *p
 	char *s, *sret;
 	json_error_t err;
 	bool ret = false;
-
-	if (sctx->rpc2)
-		return rpc2_stratum_authorize(sctx, user, pass);
 
 	s = (char*)malloc(80 + strlen(user) + strlen(pass));
 	sprintf(s, "{\"id\": 2, \"method\": \"mining.authorize\", \"params\": [\"%s\", \"%s\"]}",
@@ -1453,10 +1448,6 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 	char algo[64] = { 0 };
 	get_currentalgo(algo, sizeof(algo));
 	bool has_claim = !strcasecmp(algo, "lbry");
-
-	if (sctx->is_equihash) {
-		return equi_stratum_notify(sctx, params);
-	}
 
 	job_id = json_string_value(json_array_get(params, p++));
 	prevhash = json_string_value(json_array_get(params, p++));
@@ -1643,7 +1634,7 @@ static bool stratum_get_algo(struct stratum_ctx *sctx, json_t *id, json_t *param
 
 #include "nvml.h"
 extern char driver_version[32];
-extern int cuda_arch[MAX_GPUS];
+//extern int cuda_arch[MAX_GPUS];
 
 void gpu_increment_reject(int thr_id)
 {
@@ -1668,7 +1659,7 @@ static bool stratum_benchdata(json_t *result, json_t *params, int thr_id)
 	char os[8];
 	uint32_t watts = 0, plimit = 0;
 	int dev_id = device_map[thr_id];
-	int cuda_ver = cuda_version();
+	int cuda_ver = 0;// cuda_version();
 	struct cgpu_info *cgpu = &thr_info[thr_id].gpu;
 	json_t *val;
 
@@ -1680,16 +1671,16 @@ static bool stratum_benchdata(json_t *result, json_t *params, int thr_id)
 	strcpy(os, is_windows() ? "win32" : "linux");
 #endif
 
-	cuda_gpu_info(cgpu);
+//	cuda_gpu_info(cgpu);
 #ifdef USE_WRAPNVML
 	cgpu->has_monitoring = true;
 	if (cgpu->monitor.gpu_power)
 		cgpu->gpu_power = cgpu->monitor.gpu_power;
 	else
-		cgpu->gpu_power = gpu_power(cgpu); // mWatts
+		cgpu->gpu_power = 0;// gpu_power(cgpu); // mWatts
 	watts = (cgpu->gpu_power >= 1000) ? cgpu->gpu_power / 1000 : 0; // ignore nvapi %
 	plimit = device_plimit[dev_id] > 0 ? device_plimit[dev_id] : 0;
-	gpu_info(cgpu); // vid/pid
+//	gpu_info(cgpu); // vid/pid
 #endif
 	get_currentalgo(algo, sizeof(algo));
 
@@ -1698,10 +1689,6 @@ static bool stratum_benchdata(json_t *result, json_t *params, int thr_id)
 
 	sprintf(vid, "%04hx:%04hx", cgpu->gpu_vid, cgpu->gpu_pid);
 	sprintf(arch, "%d", (int) cgpu->gpu_arch);
-	if (cuda_arch[dev_id] > 0 && cuda_arch[dev_id] != cgpu->gpu_arch) {
-		// if binary was not compiled for the highest cuda arch, add it
-		snprintf(arch, 8, "%d@%d", (int) cgpu->gpu_arch, cuda_arch[dev_id]);
-	}
 	snprintf(driver, 32, "CUDA %d.%d %s", cuda_ver/1000, (cuda_ver%1000) / 10, driver_version);
 	driver[31] = '\0';
 
@@ -1786,9 +1773,6 @@ static bool stratum_show_message(struct stratum_ctx *sctx, json_t *id, json_t *p
 	json_t *val;
 	bool ret;
 
-	if (sctx->is_equihash)
-		return equi_stratum_show_message(sctx, id, params);
-
 	val = json_array_get(params, 0);
 	if (val)
 		applog(LOG_NOTICE, "MESSAGE FROM SERVER: %s", json_string_value(val));
@@ -1864,7 +1848,7 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	}
 	if (!strcasecmp(method, "mining.set_target")) {
 		sctx->is_equihash = true;
-		ret = equi_stratum_set_target(sctx, params);
+//		ret = equi_stratum_set_target(sctx, params);
 		goto out;
 	}
 	if (!strcasecmp(method, "mining.set_extranonce")) {
@@ -1892,10 +1876,6 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	}
 	if (!strcasecmp(method, "client.show_message")) { // common
 		ret = stratum_show_message(sctx, id, params);
-		goto out;
-	}
-	if (sctx->rpc2 && !strcasecmp(method, "job")) { // xmr/bbr
-		ret = rpc2_stratum_job(sctx, id, params);
 		goto out;
 	}
 
@@ -2122,33 +2102,6 @@ static uint32_t zrtest[20] = {
 	swab32(0x2a9e2300),
 };
 
-void do_gpu_tests(void)
-{
-#ifdef _DEBUG
-	unsigned long done;
-	char s[128] = { '\0' };
-	struct work work;
-	memset(&work, 0, sizeof(work));
-
-	opt_tracegpu = true;
-	work_restart = (struct work_restart*) malloc(sizeof(struct work_restart));
-	work_restart[0].restart = 1;
-	work.target[7] = 0xffff;
-
-	//struct timeval tv;
-	//memset(work.data, 0, sizeof(work.data));
-	//scanhash_scrypt_jane(0, &work, NULL, 1, &done, &tv, &tv);
-
-	memset(work.data, 0, sizeof(work.data));
-	work.data[0] = 0;
-	scanhash_hmq17(0, &work, 1, &done);
-
-	free(work_restart);
-	work_restart = NULL;
-	opt_tracegpu = false;
-#endif
-}
-
 void print_hash_tests(void)
 {
 	uchar *scratchbuf = NULL;
@@ -2163,7 +2116,7 @@ void print_hash_tests(void)
 	// buf[0] = 1; buf[64] = 2; // for endian tests
 
 	printf(CL_WHT "CPU HASH ON EMPTY BUFFER RESULTS:" CL_N "\n");
-
+	/*
 	bastionhash(&hash[0], &buf[0]);
 	printpfx("bastion", hash);
 
@@ -2343,5 +2296,6 @@ void print_hash_tests(void)
 
 	do_gpu_tests();
 
-	free(scratchbuf);
+	*/
+free(scratchbuf);
 }

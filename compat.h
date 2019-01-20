@@ -58,6 +58,7 @@ __inline int msver(void) {
 	case 1700: return 2012;
 	case 1800: return 2013;
 	case 1900: return 2015;
+	case 1912: return 2017;
 	default: return (_MSC_VER/100);
 	}
 }

@@ -124,17 +124,17 @@ static void gpustatus(int thr_id)
 		char buf[512]; *buf = '\0';
 		char* card;
 
-		cuda_gpu_info(cgpu);
+//		cuda_gpu_info(cgpu);
 		cgpu->gpu_plimit = device_plimit[cgpu->gpu_id];
 
 #ifdef USE_WRAPNVML
 		cgpu->has_monitoring = true;
-		cgpu->gpu_bus = gpu_busid(cgpu);
-		cgpu->gpu_temp = gpu_temp(cgpu);
-		cgpu->gpu_fan = (uint16_t) gpu_fanpercent(cgpu);
-		cgpu->gpu_fan_rpm = (uint16_t) gpu_fanrpm(cgpu);
-		cgpu->gpu_power = gpu_power(cgpu); // mWatts
-		cgpu->gpu_plimit = gpu_plimit(cgpu); // mW or %
+		cgpu->gpu_bus = 0;// gpu_busid(cgpu);
+		cgpu->gpu_temp = 0;// gpu_temp(cgpu);
+		cgpu->gpu_fan = (uint16_t)0;// gpu_fanpercent(cgpu);
+		cgpu->gpu_fan_rpm = (uint16_t)0;// gpu_fanrpm(cgpu);
+		cgpu->gpu_power = 0;// gpu_power(cgpu); // mWatts
+		cgpu->gpu_plimit = 0;// gpu_plimit(cgpu); // mW or %
 #endif
 		cgpu->khashes = stats_get_speed(thr_id, 0.0) / 1000.0;
 		if (cgpu->monitor.gpu_power) {
@@ -272,7 +272,7 @@ static void gpuhwinfos(int gpu_id)
 	if (cgpu == NULL)
 		return;
 
-	cuda_gpu_info(cgpu);
+//	cuda_gpu_info(cgpu);
 	cgpu->gpu_plimit = device_plimit[cgpu->gpu_id];
 
 #ifdef USE_WRAPNVML
@@ -355,8 +355,8 @@ static void syshwinfos()
 static char *gethwinfos(char *params)
 {
 	*buffer = '\0';
-	for (int i = 0; i < cuda_num_devices(); i++)
-		gpuhwinfos(i);
+//	for (int i = 0; i < cuda_num_devices(); i++)
+//		gpuhwinfos(i);
 	syshwinfos();
 	return buffer;
 }
@@ -1344,7 +1344,7 @@ void api_set_throughput(int thr_id, uint32_t throughput)
 {
 	if (thr_id < MAX_GPUS && thr_info) {
 		struct cgpu_info *cgpu = &thr_info[thr_id].gpu;
-		cgpu->intensity = throughput2intensity(throughput);
+		cgpu->intensity = 0;// throughput2intensity(throughput);
 		if (cgpu->throughput != throughput) cgpu->throughput = throughput;
 	}
 	// to display in bench results
