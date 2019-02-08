@@ -97,7 +97,6 @@ char* sia_getheader(CURL *curl, struct pool_infos *pool)
 	headers = curl_slist_append(headers, "Accept: application/octet-stream");
 	headers = curl_slist_append(headers, "Expect:"); // disable Expect hdr
 	headers = curl_slist_append(headers, "User-Agent: Sia-Agent"); // required for now
-//	headers = curl_slist_append(headers, "User-Agent: " USER_AGENT);
 //	headers = curl_slist_append(headers, "X-Mining-Extensions: longpoll");
 
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -183,7 +182,6 @@ bool sia_submit(CURL *curl, struct pool_infos *pool, struct work *work)
 	headers = curl_slist_append(headers, "Accept:"); // disable Accept hdr
 	headers = curl_slist_append(headers, "Expect:"); // disable Expect hdr
 	headers = curl_slist_append(headers, "User-Agent: Sia-Agent");
-//	headers = curl_slist_append(headers, "User-Agent: " USER_AGENT);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
 	int res = curl_easy_perform(curl) == 0;

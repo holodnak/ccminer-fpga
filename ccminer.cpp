@@ -48,6 +48,7 @@
 #include "donate.h"
 #include "fpga.h"
 #include "scanhash.h"
+#include "options.h"
 
 #ifdef WIN32
 #include <Mmsystem.h>
@@ -68,8 +69,28 @@ BOOL WINAPI ConsoleHandler(DWORD);
 
 #define MAX_COM_PORTS	64
 
+char user_agent_str[64];
+
+const char *default_user_agent = PACKAGE_NAME "/" PACKAGE_VERSION;
+const char *fake_user_agent1 = "sgminer/5.6.0-nicehash";
+const char *fake_user_agent2 = "t-rex/0.9.1";
+
+void set_user_agent(char *str)
+{
+	if (str == 0)
+		strcpy(user_agent_str, default_user_agent);
+	else if (str == (char*)1)
+		strcpy(user_agent_str, fake_user_agent1);
+	else if (str == (char*)2)
+		strcpy(user_agent_str, fake_user_agent2);
+	else
+		strcpy(user_agent_str, str);
+}
+
 int ports[MAX_COM_PORTS];
 int numports = 0;
+
+int ignore_bad_ident = 0;
 
 enum workio_commands {
 	WC_GET_WORK,
@@ -495,7 +516,8 @@ struct option options[] = {
 	{ "eco", 0, NULL, 1082 },
 	{ "segwit", 0, NULL, 1083 },
 	{ "com-port", 1, NULL, 1095 },
-{ 0, 0, 0, 0 }
+	{ "ignore-bad-ident", 0, NULL, 1096 },
+	{ 0, 0, 0, 0 }
 };
 
 static char const scrypt_usage[] = "\n\
@@ -937,6 +959,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		case ALGO_BLAKECOIN:
 		case ALGO_BLAKE2S:
 		case ALGO_BMW:
+		case ALGO_BMW512:
 		case ALGO_SHA256D:
 		case ALGO_SHA256T:
 		case ALGO_VANILLA:
@@ -2089,10 +2112,12 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_KECCAKC:
 		case ALGO_LBRY:
 		case ALGO_LYRA2v2:
+		case ALGO_LYRA2v3:
 		case ALGO_LYRA2Z:
 		case ALGO_TIMETRAVEL:
 		case ALGO_BITCORE:
 		case ALGO_X16R:
+		case ALGO_BMW512:
 		case ALGO_X16S:
 			work_set_target(work, sctx->job.diff / (256.0 * opt_difficulty));
 			break;
@@ -2211,10 +2236,17 @@ static void *miner_thread(void *userdata)
 	int devtimeout = 1;
 	sprintf(devpath, "\\\\.\\COM%d", com_port);
 
-	mythr->fd = serial_open(devpath, devbaud, devtimeout, 1);
+	mythr->fd = fpga_open(devpath);
 	if (mythr->fd > 0) {
+		fpgainfo_t info;
+
 		applog(LOG_INFO, "miner thread[%d]: opened port %s", thr_id, devpath);
-		//		LogS << "EthashCPUMiner::workLoop() started, miner[" << m_index << "] (COM" << port << ")";
+		memset(&info, 0, sizeof(fpgainfo_t));
+		fpga_get_info(mythr->fd, &info);
+		applog(LOG_INFO, "FPGA info:");
+		applog(LOG_INFO, "  . algorithm: %s", fpga_algo_id_to_string(info.algo_id));
+		applog(LOG_INFO, "  . version:   %02X", info.version);
+		applog(LOG_INFO, "  . hardware:  %s", fpga_target_to_string(info.target));
 	}
 	else {
 		printf("miner thread[%d]: error opening port %s\n", thr_id, devpath);
@@ -2651,6 +2683,7 @@ static void *miner_thread(void *userdata)
 				break;
 			case ALGO_BLAKE:
 			case ALGO_BMW:
+			case ALGO_BMW512:
 			case ALGO_DECRED:
 			case ALGO_SHA256D:
 			case ALGO_SHA256T:
@@ -2674,6 +2707,7 @@ static void *miner_thread(void *userdata)
 			case ALGO_JHA:
 			case ALGO_HSR:
 			case ALGO_LYRA2v2:
+			case ALGO_LYRA2v3:
 			case ALGO_PHI:
 			case ALGO_POLYTIMOS:
 			case ALGO_S3:
@@ -2749,13 +2783,28 @@ static void *miner_thread(void *userdata)
 */
 		work.valid_nonces = 0;
 
+		uint64_t hdone64 = 0;
+
 		/* scan nonces for a proof-of-work hash */
 		switch (opt_algo) {
 
 		case ALGO_SHA256Q:
-			uint64_t hdone64;
-
 			rc = scanhash_sha256q(thr_id, &work, max_nonce, &hdone64);
+			hashes_done = (unsigned long)hdone64;
+			break;
+
+		case ALGO_SKEIN2:
+			rc = scanhash_skein2(thr_id, &work, max_nonce, &hdone64);
+			hashes_done = (unsigned long)hdone64;
+			break;
+
+		case ALGO_LYRA2v3:
+			rc = scanhash_lyra2v3(thr_id, &work, max_nonce, &hdone64);
+			hashes_done = (unsigned long)hdone64;
+			break;
+
+		case ALGO_BMW512:
+			rc = scanhash_bmw512(thr_id, &work, max_nonce, &hdone64);
 			hashes_done = (unsigned long)hdone64;
 			break;
 
@@ -2872,9 +2921,6 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_SKEIN:
 			rc = scanhash_skeincoin(thr_id, &work, max_nonce, &hashes_done);
-			break;
-		case ALGO_SKEIN2:
-			rc = scanhash_skein2(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_SKUNK:
 			rc = scanhash_skunk(thr_id, &work, max_nonce, &hashes_done);
@@ -3104,8 +3150,10 @@ out:
 	if (opt_debug_threads)
 		applog(LOG_DEBUG, "%s() died", __func__);
 	tq_freeze(mythr->q);
-	_close(mythr->fd);
+
+	fpga_close(mythr->fd);
 	mythr->fd = 0;
+
 	return NULL;
 }
 
@@ -4096,6 +4144,10 @@ void parse_arg(int key, char *arg)
 		printf("fpga com-port: %d\n", atoi(arg));
 		ports[numports++] = atoi(arg);
 		break;
+	case 1096:
+		printf("FPGA ignoring bad ident string\n");
+		ignore_bad_ident = 1;
+		break;
 	case 1083:
 		opt_segwit_mode = true;
 		break;
@@ -4449,17 +4501,10 @@ int main(int argc, char *argv[])
 	// get opt_quiet early
 	parse_single_opt('q', argc, argv);
 
-	printf("*** fpgaminer " PACKAGE_VERSION " by James Holodnak (jamesholodnak@gmail.com) ***\n");
+	printf("*** fpgaminer " PACKAGE_VERSION " %s by James Holodnak (jamesholodnak@gmail.com) ***\n\n", is_x64() ? "64-bits" : "32-bits");
 	if (!opt_quiet) {
-		const char* arch = is_x64() ? "64-bits" : "32-bits";
-#ifdef _MSC_VER
-		printf("    Built with VC++ %d\n\n", msver()
-#else
-		printf("    Built with the nVidia CUDA Toolkit %d.%d %s\n\n",
-#endif
-			);
-		printf("  Originally based on Christian Buchner and Christian H. project\n");
-		printf("  Include some kernels from alexis78, djm34, djEzo, tsiv and krnlx.\n\n");
+		printf("  Forked from nevermore-miner by brianmct (https://github.com/brian112358/nevermore-miner).\n");
+		printf("  Originally based on Christian Buchner and Christian H. project\n\n");
 	}
 
 	rpc_user = strdup("");
@@ -4487,16 +4532,31 @@ int main(int argc, char *argv[])
 #else
 	num_cpus = 1;
 #endif
-	if (num_cpus < 1)
-		num_cpus = 1;
+	num_cpus = 1;
 
 	// number of gpus
-	active_gpus = 1;// cuda_num_devices();
-
-//	cuda_devicenames();
+	active_gpus = numports;// cuda_num_devices();
 
 	/* parse command line */
 	parse_cmdline(argc, argv);
+
+	if (numports > 1) {
+		printf("\n ** Multiple com-ports per instance is NOT SUPPORTED.  Please use one miner instance per FPGA. **\n\n");
+	}
+
+	if (numports == 0) {
+		int p = fpga_find_device(fpga_algo_to_algoid(opt_algo));
+
+		if (p == 0) {
+			printf("No available FPGAs found.  Exiting.\n");
+			exit(0);
+		}
+		ports[numports++] = p;
+	}
+
+	active_gpus = numports;
+
+//	cuda_devicenames();2.2.5
 
 	if (dev_donate_percent == 0.0) {
 		printf("No dev donation set. Please consider making a one-time donation to the following addresses:\n");
@@ -4506,19 +4566,44 @@ int main(int argc, char *argv[])
 		printf("RVN donation address: RWoSZX6j6WU6SVTVq5hKmdgPmmrYE9be5R (brianmct)\n\n");
 	}
 	else {
-		// Set dev pool credentials.
-		rpc_user = strdup("PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG");
-		rpc_pass = strdup("c=PYE");
-		rpc_url = strdup("stratum+tcp://stratum-eu.coin-miners.info:3340");
-		short_url = strdup("dev pool");
-		pool_set_creds(num_pools++);
-		struct pool_infos *p = &pools[num_pools-1];
-		p->type |= POOL_DONATE;
-		p->algo = ALGO_X16R;
+	
+		pool_info_t info;
+
+		if (get_dev_pool(&info, opt_algo) == 0) {
+			// Set dev pool credentials.
+			rpc_user = strdup(info.user);
+			rpc_pass = strdup(info.pass);
+			rpc_url = strdup(info.url);
+			short_url = strdup("dev pool");
+			pool_set_creds(num_pools++);
+			struct pool_infos *p = &pools[num_pools - 1];
+			p->type |= POOL_DONATE;
+			p->algo = opt_algo;
+			/*
+			printf("dev fee user: '%s'\n", rpc_user);
+			printf("dev fee pass: '%s'\n", rpc_pass);
+			printf("dev fee url:  '%s'\n", rpc_url);
+			*/
+		}
+
+		else {
+			printf(" ** No dev pool availble! **\n\n");
+
+			// Set dev pool credentials.
+			rpc_user = strdup("PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG");
+			rpc_pass = strdup("c=PYE");
+			rpc_url = strdup("stratum+tcp://stratum-eu.coin-miners.info:3340");
+			short_url = strdup("dev pool");
+			pool_set_creds(num_pools++);
+			struct pool_infos *p = &pools[num_pools - 1];
+			p->type |= POOL_DONATE;
+			p->algo = ALGO_SHA256Q;
+		}
+
 		dev_timestamp = time(NULL);
+
 		// ensure that donation time is not within first 30 seconds
-		dev_timestamp_offset = fmod(rand(),
-			DONATE_CYCLE_TIME * (1 - dev_donate_percent/100.) - 30);
+		dev_timestamp_offset = fmod(rand(), DONATE_CYCLE_TIME * (1 - dev_donate_percent/100.) - 30);
 		printf("Dev donation set to %.1f%%. Thanks for supporting this project!\n\n", dev_donate_percent);
 	}
 
@@ -4633,10 +4718,17 @@ int main(int argc, char *argv[])
 			applog(LOG_DEBUG, "Binding process to cpu mask %x", opt_affinity);
 		affine_to_cpu_mask(-1, (unsigned long)opt_affinity);
 	}
-	if (active_gpus == 0) {
-		applog(LOG_ERR, "No CUDA devices found! terminating.");
+
+	if (numports <= 0) {
+		applog(LOG_ERR, "No FPGA com ports specified.  Terminating.");
 		exit(1);
 	}
+
+	if (numports > 1) {
+		applog(LOG_ERR, "Multiple com port support not finished yet.  May perform duplicate work.  For best results use one miner instance per fpga.\n");
+		//exit(1);
+	}
+
 	if (!opt_n_threads)
 		opt_n_threads = active_gpus;
 	else if (active_gpus > opt_n_threads)
@@ -4644,11 +4736,6 @@ int main(int argc, char *argv[])
 
 	opt_n_threads = numports;
 	active_gpus = numports;
-
-	if (numports > 1) {
-		applog(LOG_ERR, "Multiple com port support not finished yet.  May perform duplicate work.  For best results use one miner instance per fpga.\n");
-//		exit(1);
-	}
 
 	// generally doesn't work well...
 	gpu_threads = max(gpu_threads, opt_n_threads / active_gpus);
@@ -4751,6 +4838,8 @@ int main(int argc, char *argv[])
 		thr = &thr_info[i];
 
 		thr->id = i;
+		thr->solutions = 0;
+		thr->hw_err = 0;
 		thr->com_port = get_thread_port(i);
 		thr->gpu.thr_id = i;
 		thr->gpu.gpu_id = (uint8_t) device_map[i];

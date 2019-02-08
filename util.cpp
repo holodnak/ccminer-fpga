@@ -489,9 +489,12 @@ static json_t *json_rpc_call(CURL *curl, const char *url,
 	sprintf(len_hdr, "Content-Length: %lu", (unsigned long) upload_data.len);
 	sprintf(hashrate_hdr, "X-Mining-Hashrate: %llu", (unsigned long long) global_hashrate);
 
+	char tmp2[64];
+
+	sprintf(tmp2, "User-Agent: %s", USER_AGENT);
 	headers = curl_slist_append(headers, "Content-Type: application/json");
 	headers = curl_slist_append(headers, len_hdr);
-	headers = curl_slist_append(headers, "User-Agent: " USER_AGENT);
+	headers = curl_slist_append(headers, tmp2);
 	headers = curl_slist_append(headers, "X-Mining-Extensions: longpoll noncerange reject-reason");
 	headers = curl_slist_append(headers, hashrate_hdr);
 	headers = curl_slist_append(headers, "Accept:"); /* disable Accept hdr*/
@@ -1232,9 +1235,9 @@ start:
 	if (retry)
 		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": []}");
 	else if (sctx->session_id)
-		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"" USER_AGENT "\", \"%s\"]}", sctx->session_id);
+		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"%s\", \"%s\"]}", USER_AGENT, sctx->session_id);
 	else
-		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"" USER_AGENT "\"]}");
+		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"%s\"]}", USER_AGENT);
 
 	if (!stratum_send_line(sctx, s))
 		goto out;

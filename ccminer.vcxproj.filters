@@ -93,9 +93,6 @@
     <ClCompile Include="sph\blake2s.c">
       <Filter>Source Files\sph</Filter>
     </ClCompile>
-    <ClCompile Include="sph\bmw.c">
-      <Filter>Source Files\sph</Filter>
-    </ClCompile>
     <ClCompile Include="sph\cubehash.c">
       <Filter>Source Files\sph</Filter>
     </ClCompile>
@@ -211,6 +208,27 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="scan_sha256d.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_skein2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="serial.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="options.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_lyra2v3.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="lyra2\lyrav3\Lyra3.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sph\bmw.c">
+      <Filter>Source Files\sph</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_bmw512.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -373,6 +391,15 @@
     </ClInclude>
     <ClInclude Include="donate.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="serial.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="options.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lyra2\lyrav3\Lyra3.h">
+      <Filter>Header Files\lyra2</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

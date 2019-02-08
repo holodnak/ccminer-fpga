@@ -262,7 +262,10 @@ void aligned_free(void *ptr);
 
 json_t * json_load_url(char* cfg_url, json_error_t *err);
 
-#define USER_AGENT PACKAGE_NAME "/" PACKAGE_VERSION
+extern char user_agent_str[];
+
+#define USER_AGENT user_agent_str
+//#define USER_AGENT PACKAGE_NAME "/" PACKAGE_VERSION
 
 void sha256_init(uint32_t *state);
 void sha256_transform(uint32_t *state, const uint32_t *block, int swap);
@@ -505,6 +508,8 @@ struct thr_info {
 	struct cgpu_info gpu;
 	int com_port;
 	int fd;
+	int solutions;
+	int hw_err;
 };
 
 struct work_restart {

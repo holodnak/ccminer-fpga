@@ -2,60 +2,30 @@
 #include "fpga.h"
 #include "scanhash.h"
 
-#include <io.h>
-#include <string.h>
-#include <inttypes.h>
-
-#include <openssl/sha.h>
-
-static __thread SHA256_CTX sha256q_ctx;
-
-void sha256q_midstate(const void* input)
-{
-	SHA256_Init(&sha256q_ctx);
-
-	//printf("start midstate:\n\n");
-	//printData(sha256q_ctx.h, 32);
-	//printDataFPGA(sha256q_ctx.h, 32);
-
-	SHA256_Update(&sha256q_ctx, input, 64);
+extern "C" {
+#include "sph/sph_bmw.h"
 }
 
-void sha256q_hash(void* output, const void* input)
+void bmw512_hash(void *state, const void *input)
 {
-	uint32_t _ALIGN(64) hash[16];
-	const int midlen = 64;            // bytes
-	const int tail = 80 - midlen;   // 16
+	uint32_t _ALIGN(128) hash[16];
+	uint32_t *inp = (uint32_t*)input;
+	sph_bmw512_context       ctx_bmw;
 
-	SHA256_CTX ctx;
+	sph_bmw512_init(&ctx_bmw);
+	sph_bmw512(&ctx_bmw, inp, 80);
+	sph_bmw512_close(&ctx_bmw, hash);
 
-	memcpy(&ctx, &sha256q_ctx, sizeof sha256q_ctx);
-
-	SHA256_Update(&ctx, ((unsigned char*)input) + midlen, tail);
-	SHA256_Final((unsigned char*)hash, &ctx);
-
-	SHA256_Init(&ctx);
-	SHA256_Update(&ctx, hash, 32);
-	SHA256_Final((unsigned char*)hash, &ctx);
-
-	SHA256_Init(&ctx);
-	SHA256_Update(&ctx, hash, 32);
-	SHA256_Final((unsigned char*)hash, &ctx);
-
-	SHA256_Init(&ctx);
-	SHA256_Update(&ctx, hash, 32);
-	SHA256_Final((unsigned char*)hash, &ctx);
-
-	memcpy(output, hash, 32);
+	memcpy(state, hash, 64);
 }
 
-
-int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
+int scanhash_bmw512(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
 {
-	unsigned char wbuf[52];
+	unsigned char wbuf[84];
 	uint32_t *pdata = work->data;
 	unsigned char buf[8];
 	uint32_t endiandata[32];
+	uint32_t hash_test[64];
 
 	if (pdata[19] < 200)
 		pdata[19] = 200;
@@ -65,26 +35,42 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	for (int k = 0; k < 20; k++)
 		be32enc(&endiandata[k], pdata[k]);
 
-	sha256q_midstate(endiandata);
+	//	sha256q_midstate(endiandata);
 
 	//copy midstate
-	memcpy(wbuf, sha256q_ctx.h, 32);
+	//	memcpy(wbuf, sha256q_ctx.h, 32);
 
 	//copy data
-	memcpy(wbuf + 32, &endiandata[16], 16);
-	memcpy(wbuf + 48, ((unsigned char*)&work->target[6]), 4);
+	memcpy(wbuf, endiandata, 80);
+
+	//copy target
+	wbuf[80] = ((unsigned char*)work->target)[0x1F - 4];
+	wbuf[81] = ((unsigned char*)work->target)[0x1E - 4];
+	wbuf[82] = ((unsigned char*)work->target)[0x1D - 4];
+	wbuf[83] = ((unsigned char*)work->target)[0x1C - 4];
+
+//	printData(work->target, 32);
+//	printData(pdata, 80);
+//	printDataC(endiandata, 80);
+//	printDataFPGA(pdata, 80);
+//	printDataFPGA(endiandata, 80);
+
+//	bmw512_hash(hash_test, endiandata);
+//	printData(hash_test, 64);
+
 
 	//swap endian of data + nonce + target
-	bswap(wbuf + 32, 20);
+	//bswap(wbuf, 76);
 
 	//unswap nonce endian
-	bswap(wbuf + 44, 4);
+	//bswap(wbuf + 44, 4);
 
-	//reverse midstate
-	reverse(wbuf, 32);
+//	bswap(wbuf, 76);
+//	bswap(wbuf, 80);
+	reverse(wbuf, 76);
 
 	//reverse data
-	reverse(wbuf + 32, 12);
+	//reverse(wbuf + 32, 12);
 
 #define SERIAL_READ_SIZE 8
 
@@ -94,8 +80,12 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	int info_timeout;
 	info_timeout = 10;
 
-	fpga_send_data(thr_info[thr_id].fd, wbuf, 52);
-//	_write(thr_info[thr_id].fd, wbuf, 52);
+//	printf("data out:\n");
+//	printData(wbuf, 84);
+//	printDataFPGA(wbuf, 84);
+//	system("pause");
+	fpga_send_data(thr_info[thr_id].fd, wbuf, 84);
+	//	_write(thr_info[thr_id].fd, wbuf, 52);
 
 	elapsed.tv_sec = 0;
 	elapsed.tv_usec = 0;
@@ -106,7 +96,7 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 
 	first_nonce = pdata[19];
 
-	//	applog(LOG_INFO, "FPGA: Begin Scan For Nonces at (first_nonce= %08X)", first_nonce);
+//	applog(LOG_INFO, "FPGA: Begin Scan For Nonces at (first_nonce= %08X)", first_nonce);
 
 	while ((!work_restart[thr_id].restart)) {
 
@@ -121,7 +111,7 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 
 		if (ret == 0 && len != 8) {		// No Nonce Found
 			if (elapsed.tv_sec > info_timeout) {
-				//				applog(LOG_ERR, "End Scan For Nonces - Time = %d sec", elapsed.tv_sec);
+//				applog(LOG_ERR, "End Scan For Nonces - Time = %d sec", elapsed.tv_sec);
 				//thr->work_restart = true;
 				break;
 			}
@@ -149,13 +139,14 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 		temp = ((double)buf[5]) + (((double)buf[4]) * 256.0f);
 		temp = (temp * 509.3140064f / 65536.0f) - 280.23087870f;
 
-//		applog(LOG_INFO, "miner[%d] - VccInt: %0.2fv, Temp: %.1fC", thr_id, vint, temp);
+		//		applog(LOG_INFO, "miner[%d] - VccInt: %0.2fv, Temp: %.1fC", thr_id, vint, temp);
 		applog(LOG_INFO, "miner[%d] - VccInt: %0.2fv, Temp: %.1fC, Errors: %.3f%%", thr_id, vint, temp, error_pct);
 
 		uint32_t nonce;
 
 		memcpy((char *)&nonce, buf, 4);
 
+		nonce = swab32(nonce);
 		nonce = swab32(nonce);
 
 		*hashes_done = nonce - first_nonce;
@@ -170,22 +161,21 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 
 		memcpy(&work->nonces[0], &nonce, 4);
 
-		if(opt_debug)
+		if (opt_debug)
 			applog(LOG_INFO, "miner[%d] Nonce Found = %08X", thr_id, swab32(nonce));
 
 		pdata[19] = nonce;
 
-
-		uint32_t hash_test[32];
-
 		for (int k = 0; k < 20; k++)
 			be32enc(&endiandata[k], pdata[k]);
-		sha256q_hash(hash_test, endiandata);
+		bmw512_hash(hash_test, endiandata);
+//		printData(hash_test, 64);
 		if (fulltest(hash_test, work->target) == 0) {
 			thr_info[thr_id].hw_err++;
 			applog(LOG_INFO, "miner[%d] Nonce Invalid - Hardware Error", thr_id, swab32(nonce));
 			return 0;
 		}
+//		else applog(LOG_INFO, "miner[%d] Valid Nonce Found = %08X", thr_id, swab32(nonce));
 
 		return 1;
 
@@ -195,7 +185,7 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	//pdata[19] = pdata[19] + 1;
 	*hashes_done = pdata[19] - first_nonce;
 
-	//	applog(LOG_INFO, "No Nonce Found - %08X", pdata[19]);
+//	applog(LOG_INFO, "No Nonce Found - %08X", pdata[19]);
 
 	return 0;
 
