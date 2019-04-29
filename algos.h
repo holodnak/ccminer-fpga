@@ -11,6 +11,7 @@ enum sha_algos {
 	ALGO_BMW,
 	ALGO_BMW512,
 	ALGO_BASTION,
+	ALGO_BSHA3,
 	ALGO_C11,
 	ALGO_CRYPTOLIGHT,
 	ALGO_CRYPTONIGHT,
@@ -85,6 +86,7 @@ static const char *algo_names[] = {
 	"bmw",
 	"bmw512",
 	"bastion",
+	"bsha3",
 	"c11",
 	"cryptolight",
 	"cryptonight",
@@ -149,6 +151,10 @@ static const char *algo_names[] = {
 	"auto", /* reserved for multi algo */
 	""
 };
+
+#ifndef strcasecmp
+#define strcasecmp(x,y) _stricmp(x,y)
+#endif
 
 // string to int/enum
 static inline int algo_to_int(char* arg)

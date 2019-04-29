@@ -231,6 +231,17 @@
     <ClCompile Include="scan_bmw512.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="gendevpools\gendevpools\string_enc.cpp" />
+    <ClCompile Include="scan_phi1612.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_neoscrypt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_bsha3.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="freq.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">

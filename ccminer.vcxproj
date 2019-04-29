@@ -107,6 +107,9 @@
       <AdditionalOptions>/NODEFAULTLIB:LIBCMTD %(AdditionalOptions)</AdditionalOptions>
       <LinkStatus>true</LinkStatus>
     </Link>
+    <PostBuildEvent>
+      <Command>copy $(TargetPath) y:\ccminer-dev-debug.exe</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -173,6 +176,9 @@
       <LinkStatus>false</LinkStatus>
       <LargeAddressAware>true</LargeAddressAware>
     </Link>
+    <PostBuildEvent>
+      <Command>copy $(TargetPath) y:\ccminer-dev.exe</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="compat\getopt\getopt_long.c" />
@@ -194,11 +200,16 @@
       <Optimization Condition="'$(Configuration)'=='Release'">Full</Optimization>
     </ClCompile>
     <ClCompile Include="fpga.cpp" />
+    <ClCompile Include="freq.cpp" />
+    <ClCompile Include="gendevpools\gendevpools\string_enc.cpp" />
     <ClCompile Include="lyra2\lyrav3\Lyra3.cpp" />
     <ClCompile Include="options.cpp" />
     <ClCompile Include="pools.cpp" />
     <ClCompile Include="scan_bmw512.cpp" />
+    <ClCompile Include="scan_bsha3.cpp" />
     <ClCompile Include="scan_lyra2v3.cpp" />
+    <ClCompile Include="scan_neoscrypt.cpp" />
+    <ClCompile Include="scan_phi1612.cpp" />
     <ClCompile Include="scan_sha256d.cpp" />
     <ClCompile Include="scan_skein2.cpp" />
     <ClCompile Include="serial.cpp" />

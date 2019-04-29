@@ -1398,6 +1398,8 @@ static const struct {
 
 #define DO(x)   x
 
+int noise = 0;
+
 #define KECCAK_F_1600   DO(KECCAK_F_1600_)
 
 #if SPH_KECCAK_UNROLL == 1
@@ -1455,14 +1457,23 @@ static const struct {
 		int j; \
 		for (j = 0; j < 24; j += 8) { \
 			KF_ELT( 0,  1, RC[j + 0]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+0);printData(&kc2.u.narrow, 1600 / 8);}\
 			KF_ELT( 1,  2, RC[j + 1]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+1);printData(&kc2.u.narrow, 1600 / 8);}\
 			KF_ELT( 2,  3, RC[j + 2]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+2);printData(&kc2.u.narrow, 1600 / 8);}\
 			KF_ELT( 3,  4, RC[j + 3]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+3);printData(&kc2.u.narrow, 1600 / 8);}\
 			KF_ELT( 4,  5, RC[j + 4]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+4);printData(&kc2.u.narrow, 1600 / 8);}\
 			KF_ELT( 5,  6, RC[j + 5]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+5);printData(&kc2.u.narrow, 1600 / 8);}\
 			KF_ELT( 6,  7, RC[j + 6]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+6);printData(&kc2.u.narrow, 1600 / 8);}\
 			KF_ELT( 7,  8, RC[j + 7]); \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+7);printData(&kc2.u.narrow, 1600 / 8);}\
 			P8_TO_P0; \
+if(noise){WRITE_STATE((&kc2));printf("round %d\n", j+70);printData(&kc2.u.narrow, 1600 / 8);}\
 		} \
 	} while (0)
 
@@ -1565,12 +1576,28 @@ keccak_init(sph_keccak_context *kc, unsigned out_size)
 	kc->lim = 200 - (out_size >> 2);
 }
 
-static void
-keccak_core(sph_keccak_context *kc, const void *data, size_t len, size_t lim)
+static void printData(void* data, int size)
 {
+	int i;
+	for (i = 0; i < size; i++)
+	{
+		printf("%02X", ((unsigned char*)data)[i]);
+		if ((i + 1) % 16 == 0) printf("\n");
+		else if ((i + 1) % 8 == 0) printf(" - ");
+		else if ((i + 1) % 4 == 0) printf(" ");
+	}
+	printf("\n");
+}
+
+static void
+keccak_core(sph_keccak_context* kc, const void *data, size_t len, size_t lim)
+{
+	sph_keccak_context kc2;
 	unsigned char *buf;
 	size_t ptr;
 	DECL_STATE
+
+	memset(&kc2, 0, sizeof(sph_keccak_context));
 
 	buf = kc->buf;
 	ptr = kc->ptr;
@@ -1615,7 +1642,7 @@ keccak_core(sph_keccak_context *kc, const void *data, size_t len, size_t lim)
 		} u; \
 		size_t j; \
  \
-		eb = (0x100 | (ub & 0xFF)) >> (8 - n); \
+		eb = 6;/*(0x100 | (ub & 0xFF)) >> (8 - n);*/ \
 		if (kc->ptr == (lim - 1)) { \
 			if (n == 7) { \
 				u.tmp[0] = eb; \
@@ -1659,7 +1686,7 @@ keccak_core(sph_keccak_context *kc, const void *data, size_t len, size_t lim)
 		} u; \
 		size_t j; \
  \
-		eb = (0x100 | (ub & 0xFF)) >> (8 - n); \
+		eb = 6;(0x100 | (ub & 0xFF)) >> (8 - n); \
 		if (kc->ptr == (lim - 1)) { \
 			if (n == 7) { \
 				u.tmp[0] = eb; \

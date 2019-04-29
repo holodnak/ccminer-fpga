@@ -50,7 +50,7 @@ extern "C" {
 
 void lyra2v3_midstate(void *state, const void *input)
 {
-	uint32_t _ALIGN(128) hash[8], hashB[8];
+	uint32_t _ALIGN(128) hash[8];
 
 	sph_blake256_context     ctx_blake;
 

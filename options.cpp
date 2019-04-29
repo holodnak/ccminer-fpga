@@ -24,11 +24,38 @@ devpools is a list of all pools for developer fees.
 #include "algos.h"
 #include "options.h"
 
-pool_info_t devpools[] = {
+#include "gendevpools/gendevpools/string_enc.h"
+#include "gendevpools/gendevpools/genpools.c"
+
+pool_info_t devpools[NUM_DEVPOOLS + 1] = {/*
 	{ ALGO_SHA256Q,		"stratum+tcp://stratum-eu.coin-miners.info:3340",		"PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG",		"c=PYE" },
 	{ ALGO_SHA256Q,		"stratum+tcp://pool.pyrite.pw::3337",					"PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG",		"c=PYE" },
+	{ ALGO_BMW512,		"stratum+tcp://us.gos.cx:3100",					        "BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },
+	{ ALGO_BMW512,		"stratum+tcp://smilingmining.com:4766",					"BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },*/
+	{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },
 	{0,0,0,0}
 };
+
+void init_dev_pools()
+{
+	int i;
+	pool_info_t *srcinfo, *dstinfo;
+
+	srcinfo = devpools_enc;
+	dstinfo = devpools;
+	for (i = 0; srcinfo->algo != 0; i++) {
+		dstinfo->algo = srcinfo->algo;
+		string_decode(dstinfo->url, srcinfo->url);
+		string_decode(dstinfo->user, srcinfo->user);
+		string_decode(dstinfo->pass, srcinfo->pass);
+		//printf("decoded dev pool:  %s / %s / %s\n", dstinfo->user, dstinfo->pass, dstinfo->url);
+		srcinfo++;
+		dstinfo++;
+
+	}
+
+	memset(dstinfo, 0, sizeof(pool_info_t));
+}
 
 int get_dev_pool(pool_info_t *info, int algo)
 {

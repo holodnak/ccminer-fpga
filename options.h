@@ -9,4 +9,5 @@ struct pool_info_s {
 
 typedef struct pool_info_s pool_info_t; 
 
+void init_dev_pools();
 int get_dev_pool(pool_info_t *info, int algo);

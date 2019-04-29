@@ -67,7 +67,7 @@ int scanhash_bmw512(int thr_id, struct work *work, uint32_t max_nonce, uint64_t 
 
 //	bswap(wbuf, 76);
 //	bswap(wbuf, 80);
-	reverse(wbuf, 76);
+//	reverse(wbuf, 76);
 
 	//reverse data
 	//reverse(wbuf + 32, 12);
@@ -111,7 +111,7 @@ int scanhash_bmw512(int thr_id, struct work *work, uint32_t max_nonce, uint64_t 
 
 		if (ret == 0 && len != 8) {		// No Nonce Found
 			if (elapsed.tv_sec > info_timeout) {
-//				applog(LOG_ERR, "End Scan For Nonces - Time = %d sec", elapsed.tv_sec);
+				applog(LOG_ERR, "End Scan For Nonces - Time = %d sec", elapsed.tv_sec);
 				//thr->work_restart = true;
 				break;
 			}
@@ -147,7 +147,7 @@ int scanhash_bmw512(int thr_id, struct work *work, uint32_t max_nonce, uint64_t 
 		memcpy((char *)&nonce, buf, 4);
 
 		nonce = swab32(nonce);
-		nonce = swab32(nonce);
+//		nonce = swab32(nonce);
 
 		*hashes_done = nonce - first_nonce;
 

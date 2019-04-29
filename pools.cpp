@@ -40,7 +40,7 @@ extern volatile int pool_switch_count;
 extern volatile bool pool_is_switching;
 extern uint8_t conditional_state[MAX_GPUS];
 
-extern double thr_hashrates[MAX_GPUS];
+extern double volatile thr_hashrates[MAX_GPUS];
 
 extern struct option options[];
 

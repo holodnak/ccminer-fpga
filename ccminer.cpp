@@ -49,6 +49,7 @@
 #include "fpga.h"
 #include "scanhash.h"
 #include "options.h"
+#include "sph/sph_keccak.h"
 
 #ifdef WIN32
 #include <Mmsystem.h>
@@ -71,7 +72,7 @@ BOOL WINAPI ConsoleHandler(DWORD);
 
 char user_agent_str[64];
 
-const char *default_user_agent = PACKAGE_NAME "/" PACKAGE_VERSION;
+const char* default_user_agent = "ccminer/2.3";//PACKAGE_NAME "/" PACKAGE_VERSION;
 const char *fake_user_agent1 = "sgminer/5.6.0-nicehash";
 const char *fake_user_agent2 = "t-rex/0.9.1";
 
@@ -117,6 +118,7 @@ bool opt_hwmonitor = true;
 
 // todo: limit use of these flags,
 // prefer the pools[] attributes
+int opt_startclk = 0;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool want_stratum = true;
@@ -172,6 +174,7 @@ int32_t device_led[MAX_GPUS] = { -1, -1 };
 int opt_led_mode = 0;
 int opt_cudaschedule = -1;
 static bool opt_keep_clocks = false;
+bool have_dev_pool = false;
 
 // un-linked to cmdline scrypt options (useless)
 int device_batchsize[MAX_GPUS] = { 0 };
@@ -212,6 +215,9 @@ struct stratum_ctx stratum = { 0 };
 pthread_mutex_t stratum_sock_lock;
 pthread_mutex_t stratum_work_lock;
 
+int GetAcc() { return pools[stratum.pooln].accepted_count; }
+int GetRej() { return pools[stratum.pooln].rejected_count; }
+
 char *opt_cert;
 char *opt_proxy;
 long opt_proxy_type;
@@ -229,7 +235,7 @@ static int app_exit_code = EXIT_CODE_OK;
 
 pthread_mutex_t applog_lock;
 pthread_mutex_t stats_lock;
-double thr_hashrates[MAX_GPUS] = { 0 };
+volatile double thr_hashrates[MAX_GPUS] = { 0 };
 uint64_t global_hashrate = 0;
 double   stratum_diff = 0.0;
 double   net_diff = 0;
@@ -516,6 +522,7 @@ struct option options[] = {
 	{ "eco", 0, NULL, 1082 },
 	{ "segwit", 0, NULL, 1083 },
 	{ "com-port", 1, NULL, 1095 },
+	{ "clkrate", 1, NULL, 1097 },
 	{ "ignore-bad-ident", 0, NULL, 1096 },
 	{ 0, 0, 0, 0 }
 };
@@ -844,6 +851,8 @@ static bool work_decode(const json_t *val, struct work *work)
 #define YAY "yay!!!"
 #define BOO "booooo"
 
+volatile int is_acc=0, is_rej=0;
+
 int share_result(int result, int pooln, double sharediff, const char *reason)
 {
 	const char *flag;
@@ -860,6 +869,9 @@ int share_result(int result, int pooln, double sharediff, const char *reason)
 	pthread_mutex_unlock(&stats_lock);
 
 	result ? p->accepted_count++ : p->rejected_count++;
+
+	is_acc = result ? 1 : 0;
+	is_rej = result ? 0 : 1;
 
 	p->last_share_time = time(NULL);
 	if (sharediff > p->best_share)
@@ -884,13 +896,14 @@ int share_result(int result, int pooln, double sharediff, const char *reason)
 		:	(result ? "(" YAY ")" : "(" BOO ")");
 		sprintf(solved, " solved: %u", p->solved_count);
 	}
-
+	/*
 	applog(LOG_NOTICE, "accepted: %lu/%lu (%s, ping %u ms), %s %s%s",
 			p->accepted_count,
 			p->accepted_count + p->rejected_count,
 			suppl, stratum.answer_msec, s, flag, solved);
+			*/
 	if (reason) {
-		applog(LOG_WARNING, "reject reason: %s", reason);
+		applog(LOG_WARNING, "Reject: %s", reason);
 		if (!check_dups && strncasecmp(reason, "duplicate", 9) == 0) {
 			applog(LOG_WARNING, "enabling duplicates check feature");
 			check_dups = true;
@@ -1934,6 +1947,21 @@ err_out:
 	return false;
 }
 
+void sha3d(void* state, const void* input, int len)
+{
+	uint32_t _ALIGN(64) buffer[16], hash[16];
+	sph_keccak_context ctx_keccak;
+
+	sph_keccak256_init(&ctx_keccak);
+	sph_keccak256(&ctx_keccak, input, len);
+	sph_keccak256_close(&ctx_keccak, (void*)buffer);
+	sph_keccak256_init(&ctx_keccak);
+	sph_keccak256(&ctx_keccak, buffer, 32);
+	sph_keccak256_close(&ctx_keccak, (void*)hash);
+
+	memcpy(state, hash, 32);
+}
+
 static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 {
 	uchar merkle_root[64] = { 0 };
@@ -1959,6 +1987,9 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 
 	/* Generate merkle root */
 	switch (opt_algo) {
+		case ALGO_BSHA3:
+		sha3d(merkle_root, sctx->job.coinbase, (int)sctx->job.coinbase_size);
+			break;
 		case ALGO_DECRED:
 		case ALGO_EQUIHASH:
 		case ALGO_SIA:
@@ -2125,8 +2156,10 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_LYRA2:
 			work_set_target(work, sctx->job.diff / (128.0 * opt_difficulty));
 			break;
+		case ALGO_BSHA3:
 		default:
-			work_set_target(work, sctx->job.diff / opt_difficulty);
+			work_set_target(work, sctx->job.diff / (opt_difficulty));
+			break;
 	}
 
 	if (stratum_diff != sctx->job.diff) {
@@ -2205,12 +2238,15 @@ static bool wanna_mine(int thr_id)
 
 static bool is_dev_time() {
 	// Add 2 seconds to compensate for connection time
-	time_t dev_portion = double(DONATE_CYCLE_TIME)
-											* dev_donate_percent * 0.01 + 2;
+	time_t dev_portion = (time_t)(double(DONATE_CYCLE_TIME) * dev_donate_percent * 0.01 + 2);
+
 	if(dev_portion < 12) // No point in bothering with less than 10s
 		return false;
-	return (time(NULL) - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME
-					>= (DONATE_CYCLE_TIME - dev_portion);
+
+	if(have_dev_pool == false)
+		return false;
+	
+	return (time(NULL) - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME >= (DONATE_CYCLE_TIME - dev_portion);
 }
 
 static void *miner_thread(void *userdata)
@@ -2237,6 +2273,7 @@ static void *miner_thread(void *userdata)
 	sprintf(devpath, "\\\\.\\COM%d", com_port);
 
 	mythr->fd = fpga_open(devpath);
+
 	if (mythr->fd > 0) {
 		fpgainfo_t info;
 
@@ -2247,9 +2284,13 @@ static void *miner_thread(void *userdata)
 		applog(LOG_INFO, "  . algorithm: %s", fpga_algo_id_to_string(info.algo_id));
 		applog(LOG_INFO, "  . version:   %02X", info.version);
 		applog(LOG_INFO, "  . hardware:  %s", fpga_target_to_string(info.target));
+		if (fpga_init_device(mythr->fd, 672 / 8, opt_startclk) != 0) {
+			applog(LOG_INFO, "miner thread[%d]: error initializing FPGA on port %s", thr_id, devpath);
+			return NULL;
+		}
 	}
 	else {
-		printf("miner thread[%d]: error opening port %s\n", thr_id, devpath);
+		applog(LOG_INFO, "miner thread[%d]: error opening port %s", thr_id, devpath);
 		return NULL;
 	}
 
@@ -2546,8 +2587,7 @@ static void *miner_thread(void *userdata)
 			sleep(5);
 			if (!thr_id) pools[cur_pooln].wait_time += 5;
 			continue;
-		} else if (is_dev_time() == ((pools[cur_pooln].type & POOL_DONATE) == 0) &&
-				!have_longpoll) {
+		} else if (is_dev_time() == ((pools[cur_pooln].type & POOL_DONATE) == 0) && !have_longpoll) {
 
 			// reset default mem offset before idle..
 			if (!pool_is_switching) {
@@ -2690,6 +2730,7 @@ static void *miner_thread(void *userdata)
 			//case ALGO_WHIRLPOOLX:
 				minmax = 0x40000000U;
 				break;
+			case ALGO_BSHA3:
 			case ALGO_KECCAK:
 			case ALGO_KECCAKC:
 			case ALGO_LBRY:
@@ -2775,12 +2816,7 @@ static void *miner_thread(void *userdata)
 
 		hashes_done = 0;
 		gettimeofday(&tv_start, NULL);
-/*
-		// check (and reset) previous errors
-		cudaError_t err = cudaGetLastError();
-		if (err != cudaSuccess && !opt_quiet)
-			gpulog(LOG_WARNING, thr_id, "%s", cudaGetErrorString(err));
-*/
+
 		work.valid_nonces = 0;
 
 		uint64_t hdone64 = 0;
@@ -2807,6 +2843,22 @@ static void *miner_thread(void *userdata)
 			rc = scanhash_bmw512(thr_id, &work, max_nonce, &hdone64);
 			hashes_done = (unsigned long)hdone64;
 			break;
+
+		case ALGO_PHI:
+			rc = scanhash_phi1612(thr_id, &work, max_nonce, &hdone64);
+			break;
+
+		case ALGO_NEOSCRYPT:
+			rc = scanhash_neoscrypt(thr_id, &work, max_nonce, &hdone64);
+			break;
+
+		case ALGO_BSHA3:
+			rc = scanhash_bsha3(thr_id, &work, max_nonce, &hdone64);
+			break;
+
+//		case ALGO_POLYTIMOS:
+//			rc = scanhash_polytimos(thr_id, &work, max_nonce, &hashes_done);
+//			break;
 
 			/*
 		case ALGO_BASTION:
@@ -2999,6 +3051,8 @@ static void *miner_thread(void *userdata)
 			goto out;
 		}
 
+		hashes_done = (uint32_t)hdone64;
+
 		if (abort_flag)
 			break; // time to leave the mining loop...
 
@@ -3082,7 +3136,7 @@ static void *miner_thread(void *userdata)
 		/* output */
 		if (!opt_quiet && loopcnt > 1 && (time(NULL) - tm_rate_log) > opt_maxlograte) {
 			format_hashrate(thr_hashrates[thr_id], s);
-			gpulog(LOG_INFO, thr_id, "%s", s);
+			//gpulog(LOG_INFO, thr_id, "%s", s);
 			tm_rate_log = time(NULL);
 		}
 
@@ -4092,7 +4146,7 @@ void parse_arg(int key, char *arg)
 	case 1080: /* --led */
 		{
 			char *pch = strtok(arg,",");
-			int n = 0, lastval, val;
+			int n = 0, lastval=0, val;
 			while (pch != NULL && n < MAX_GPUS) {
 				int dev_id = device_map[n++];
 				char * p = strstr(pch, "0x");
@@ -4141,8 +4195,17 @@ void parse_arg(int key, char *arg)
 		opt_eco_mode = true;
 		break;
 	case 1095:
-		printf("fpga com-port: %d\n", atoi(arg));
+		//printf("fpga com-port: %d\n", atoi(arg));
 		ports[numports++] = atoi(arg);
+		break;
+	case 1097:
+		opt_startclk = atoi(arg);
+		if (opt_startclk < 100 || opt_startclk > 800) {
+			opt_startclk = 500;
+			printf("Starting clock rate (%dmhz) is invalid, please choose between 100 - 800mhz.\n", opt_startclk);
+		}
+		else
+			printf("Starting clock rate is %dmhz\n", opt_startclk);
 		break;
 	case 1096:
 		printf("FPGA ignoring bad ident string\n");
@@ -4498,14 +4561,18 @@ int main(int argc, char *argv[])
 	long flags;
 	int i;
 
+	set_user_agent(0);
+
 	// get opt_quiet early
 	parse_single_opt('q', argc, argv);
 
-	printf("*** fpgaminer " PACKAGE_VERSION " %s by James Holodnak (jamesholodnak@gmail.com) ***\n\n", is_x64() ? "64-bits" : "32-bits");
+	//printf("*** fpgaminer " PACKAGE_VERSION " %s by James Holodnak (jamesholodnak@gmail.com) ***\n\n", is_x64() ? "64-bits" : "32-bits");
 	if (!opt_quiet) {
-		printf("  Forked from nevermore-miner by brianmct (https://github.com/brian112358/nevermore-miner).\n");
-		printf("  Originally based on Christian Buchner and Christian H. project\n\n");
+	//	printf("  Forked from nevermore-miner by brianmct (https://github.com/brian112358/nevermore-miner).\n");
+	//	printf("  Originally based on Christian Buchner and Christian H. project\n\n");
 	}
+
+	printf("\nminer v" PACKAGE_VERSION " %s\n\n", is_x64() ? "64-bits" : "32-bits");
 
 	rpc_user = strdup("");
 	rpc_pass = strdup("");
@@ -4542,7 +4609,11 @@ int main(int argc, char *argv[])
 
 	if (numports > 1) {
 		printf("\n ** Multiple com-ports per instance is NOT SUPPORTED.  Please use one miner instance per FPGA. **\n\n");
+		exit(0);
 	}
+
+	//do license checks
+	fpga_check_licenses(fpga_algo_to_algoid(opt_algo));
 
 	if (numports == 0) {
 		int p = fpga_find_device(fpga_algo_to_algoid(opt_algo));
@@ -4556,14 +4627,16 @@ int main(int argc, char *argv[])
 
 	active_gpus = numports;
 
-//	cuda_devicenames();2.2.5
+	have_dev_pool = false;
+	init_dev_pools();
 
 	if (dev_donate_percent == 0.0) {
-		printf("No dev donation set. Please consider making a one-time donation to the following addresses:\n");
+/*		printf("No dev donation set. Please consider making a one-time donation to the following addresses:\n");
 		printf("BTC donation address: 1AJdfCpLWPNoAMDfHF1wD5y8VgKSSTHxPo (tpruvot)\n\n");
 		printf("RVN donation address: RYKaoWqR5uahFioNvxabQtEBjNkBmRoRdg (alexis78)\n\n");
 		printf("BTC donation address: 1FHLroBZaB74QvQW5mBmAxCNVJNXa14mH5 (brianmct)\n");
-		printf("RVN donation address: RWoSZX6j6WU6SVTVq5hKmdgPmmrYE9be5R (brianmct)\n\n");
+		printf("RVN donation address: RWoSZX6j6WU6SVTVq5hKmdgPmmrYE9be5R (brianmct)\n\n");*/
+		printf("\nNo dev-fee for this miner.\n\n");
 	}
 	else {
 	
@@ -4579,34 +4652,20 @@ int main(int argc, char *argv[])
 			struct pool_infos *p = &pools[num_pools - 1];
 			p->type |= POOL_DONATE;
 			p->algo = opt_algo;
-			/*
-			printf("dev fee user: '%s'\n", rpc_user);
-			printf("dev fee pass: '%s'\n", rpc_pass);
-			printf("dev fee url:  '%s'\n", rpc_url);
-			*/
+			have_dev_pool = true;
 		}
 
 		else {
-			printf(" ** No dev pool availble! **\n\n");
-
-			// Set dev pool credentials.
-			rpc_user = strdup("PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG");
-			rpc_pass = strdup("c=PYE");
-			rpc_url = strdup("stratum+tcp://stratum-eu.coin-miners.info:3340");
-			short_url = strdup("dev pool");
-			pool_set_creds(num_pools++);
-			struct pool_infos *p = &pools[num_pools - 1];
-			p->type |= POOL_DONATE;
-			p->algo = ALGO_SHA256Q;
+			printf("\n ** No dev pool availble! **\n\n");
 		}
 
 		dev_timestamp = time(NULL);
 
 		// ensure that donation time is not within first 30 seconds
-		dev_timestamp_offset = fmod(rand(), DONATE_CYCLE_TIME * (1 - dev_donate_percent/100.) - 30);
-		printf("Dev donation set to %.1f%%. Thanks for supporting this project!\n\n", dev_donate_percent);
+		dev_timestamp_offset = (time_t)fmod(rand(), DONATE_CYCLE_TIME * (1 - dev_donate_percent/100.) - 30);
+		printf("\nDev donation set to %.1f%%.\n\n", dev_donate_percent);
 	}
-
+	
 	if (!opt_benchmark && !strlen(rpc_url)) {
 		// try default config file (user then binary folder)
 		char defconfig[MAX_PATH] = { 0 };
@@ -4648,6 +4707,9 @@ int main(int argc, char *argv[])
 		opt_extranonce = false; // disable subscribe
 	}
 
+	if (opt_algo == ALGO_BSHA3	) {
+		opt_extranonce = false; // disable subscribe
+	}
 
 	flags = !opt_benchmark && strncmp(rpc_url, "https:", 6)
 	      ? (CURL_GLOBAL_ALL & ~CURL_GLOBAL_SSL)
