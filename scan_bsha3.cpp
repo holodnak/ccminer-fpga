@@ -5,7 +5,12 @@
 extern "C" {
 #include "sph/sph_keccak.h"
 }
+
+
 extern "C" int noise;
+
+int smaller_diff = 1;
+
 void bsha3_hash(void* state, const void* input)
 {
 	uint32_t _ALIGN(64) buffer[16], hash[16];
@@ -106,6 +111,7 @@ int scanhash_bsha3(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	unsigned char buf[8];
 	uint32_t endiandata[32];
 	uint32_t hash_test[64];
+	uint32_t target1, my_target[8];
 
 	if (pdata[19] < 200)
 		pdata[19] = 200;
@@ -115,38 +121,29 @@ int scanhash_bsha3(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	for (int k = 0; k < 20; k++)
 		be32enc(&endiandata[k], pdata[k]);
 
+	for (int i = 0; i < 8; i++)
+		my_target[i] = work->target[i];
+
+	if (smaller_diff)
+		my_target[6] <<= 1;
+
+	target1 = my_target[6];
+
 	//copy data
 	memcpy(wbuf, endiandata, 80);
 
 	//copy target
+/*
 	wbuf[80] = ((unsigned char*)work->target)[0x1F - 4];
 	wbuf[81] = ((unsigned char*)work->target)[0x1E - 4];
 	wbuf[82] = ((unsigned char*)work->target)[0x1D - 4];
 	wbuf[83] = ((unsigned char*)work->target)[0x1C - 4];
- 
+	*/
+	wbuf[80] = ((unsigned char*)&target1)[3];
+	wbuf[81] = ((unsigned char*)&target1)[2];
+	wbuf[82] = ((unsigned char*)&target1)[1];
+	wbuf[83] = ((unsigned char*)&target1)[0];
 
-	//	printData(work->target, 32);
-	//	printData(pdata, 80);
-	//	printDataC(endiandata, 80);
-	//	printDataFPGA(pdata, 80);
-	//	printDataFPGA(endiandata, 80);
-
-	//	bmw512_hash(hash_test, endiandata);
-	//	printData(hash_test, 64);
-
-
-		//swap endian of data + nonce + target
-		//bswap(wbuf, 76);
-
-		//unswap nonce endian
-		//bswap(wbuf + 44, 4);
-
-	//	bswap(wbuf, 76);
-	//	bswap(wbuf, 80);
-	//	reverse(wbuf, 76);
-
-		//reverse data
-		//reverse(wbuf + 32, 12);
 
 #define SERIAL_READ_SIZE 8
 
@@ -237,7 +234,7 @@ int scanhash_bsha3(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 		}
 		else
-			applog(LOG_INFO, "[%dMHz] VInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_WHT " Acc/Rej: %d/%d", (cur_freq), vint, temp, error_pct, hr, GetAcc(), GetAcc() + GetRej());
+			applog(LOG_INFO, "[%dMHz] VInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_WHT " Acc/Rej: %d/%d  Sol: %d  Err: %d", (cur_freq), vint, temp, error_pct, hr, GetAcc(), GetAcc() + GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
 		is_acc = 0;
 		is_rej = 0;
 
@@ -269,17 +266,25 @@ int scanhash_bsha3(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 			be32enc(&endiandata[l], pdata[l]);
 		bsha3_hash(hash_test, endiandata);
 		//printData32(hash_test, 32);
-		if (fulltest(hash_test, work->target) == 0) {
+
+		//check for bad nonce
+		if (fulltest(hash_test, my_target) == 0) {
 			thr_info[thr_id].hw_err++;
 			applog(LOG_INFO, "miner[%d] Nonce Invalid - Hardware Error, Nonce = %08X", thr_id, swab32(nonce));
 			return 0;
 		}
+
+		if (fulltest(hash_test, work->target) == 0) {
+			//thr_info[thr_id].hw_err++;
+			//applog(LOG_INFO, "miner[%d] Nonce Invalid - Diff not high enough, Nonce = %08X", thr_id, swab32(nonce));
+			return 0;
+		}
 		else {
 			//applog(LOG_INFO, "miner[%d] Valid Nonce Found = %08X", thr_id, swab32(nonce));
+			return 1;
 		}
 
-		return 1;
-
+		return 0;
 	}
 
 	pdata[19] = 0xFFFFFFFF;

@@ -59,12 +59,13 @@
 #include <string.h>
 
 #include "miner.h"
-
+#include "fpga.h"
+  /*
 #define printf
 #define printData
 #define printDataFPGA
 #define printDataFPGAs
-
+*/
 
 #define USE_CUSTOM_BLAKE2S
   // TODO: try blake2sp
@@ -386,7 +387,7 @@ static void neoscrypt_salsa(uint * X, uint rounds) {
 	x8 = X[8];   x9 = X[9];  x10 = X[10]; x11 = X[11];
 	x12 = X[12]; x13 = X[13]; x14 = X[14]; x15 = X[15];
 
-	printf("salsa initial X: ");  printDataFPGA(X, 64);
+	//printf("salsa initial X: ");  printDataFPGA(X, 64);
 
 	//salsa
 #define quarter(a, b, c, d) \
@@ -408,7 +409,7 @@ static void neoscrypt_salsa(uint * X, uint rounds) {
 
 		//		printf("\salsa round %d X0-7:  %08X %08X %08X %08X - %08X %08X %08X %08X\n", rr - rounds, x0, x1, x2, x3, x4, x5, x6, x7);
 		//		printf("salsa round %d X8-15: %08X %08X %08X %08X - %08X %08X %08X %08X\n", rr - rounds, x8, x9, x10, x11, x12, x13, x14, x15);
-		printf("salsa round %d X: ", rr - rounds);  printDataFPGAs(Z, 64);
+		//printf("salsa round %d X: ", rr - rounds);  printDataFPGAs(Z, 64);
 
 		quarter(x0, x1, x2, x3);
 		quarter(x5, x6, x7, x4);
@@ -422,7 +423,7 @@ static void neoscrypt_salsa(uint * X, uint rounds) {
 
 		//		printf("salsa round %d X0-7:  %08X %08X %08X %08X - %08X %08X %08X %08X\n", 1 + rr - rounds, x0, x1, x2, x3, x4, x5, x6, x7);
 		//		printf("salsa round %d X8-15: %08X %08X %08X %08X - %08X %08X %08X %08X\n", 1 + rr - rounds, x8, x9, x10, x11, x12, x13, x14, x15);
-		printf("salsa round %d X: ", 1 + rr - rounds);  printDataFPGAs(Z, 64);
+		//printf("salsa round %d X: ", 1 + rr - rounds);  printDataFPGAs(Z, 64);
 	}
 
 	X[0] += x0;   X[1] += x1;   X[2] += x2;   X[3] += x3;
@@ -430,8 +431,8 @@ static void neoscrypt_salsa(uint * X, uint rounds) {
 	X[8] += x8;   X[9] += x9;  X[10] += x10; X[11] += x11;
 	X[12] += x12; X[13] += x13; X[14] += x14; X[15] += x15;
 
-	printf("salsa final X: ");  printDataFPGA(X, 64);
-	printf("\n");
+	//printf("salsa final X: ");  printDataFPGA(X, 64);
+	//printf("\n");
 
 #undef quarter
 }
@@ -697,35 +698,25 @@ static void blake2s_compress(blake2s_state * S, const void* buf) {
     G(r, 7, v[ 3], v[ 4], v[ 9], v[14]); \
   } while(0)
 	ROUND(0);
-	printf("blake2s_compress: after round 0 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 0 state = ");	printDataFPGA(v, 64);
 	ROUND(1);
-	printf("blake2s_compress: after round 1 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 1 state = ");	printDataFPGA(v, 64);
 	ROUND(2);
-	printf("blake2s_compress: after round 2 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 2 state = ");	printDataFPGA(v, 64);
 	ROUND(3);
-	printf("blake2s_compress: after round 3 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 3 state = ");	printDataFPGA(v, 64);
 	ROUND(4);
-	printf("blake2s_compress: after round 4 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 4 state = ");	printDataFPGA(v, 64);
 	ROUND(5);
-	printf("blake2s_compress: after round 5 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 5 state = ");	printDataFPGA(v, 64);
 	ROUND(6);
-	printf("blake2s_compress: after round 6 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 6 state = ");	printDataFPGA(v, 64);
 	ROUND(7);
-	printf("blake2s_compress: after round 7 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 7 state = ");	printDataFPGA(v, 64);
 	ROUND(8);
-	printf("blake2s_compress: after round 8 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 8 state = ");	printDataFPGA(v, 64);
 	ROUND(9);
-	printf("blake2s_compress: after round 9 state = ");
-	printDataFPGA(v, 64);
+	//printf("blake2s_compress: after round 9 state = ");	printDataFPGA(v, 64);
 
 	for (i = 0; i < 8; i++)
 		S->h[i] = S->h[i] ^ v[i] ^ v[i + 8];
@@ -833,9 +824,9 @@ static void neoscrypt_fastkdf(const uchar * password, uint password_len, const u
 	printf("\nneoscrypt_fastkdf: starting.  N = %d, output is %d bytes\n", N, output_len);
 
 	printf("\nneoscrypt_fastkdf: input password, %d bytes\n", password_len);
-	printData(password, password_len);
+	printData((void*)password, password_len);
 	printf("\nneoscrypt_fastkdf: input salt, %d bytes\n", salt_len);
-	printData(salt, salt_len);
+	printData((void*)salt, salt_len);
 
 	/* Align and set up the buffers in stack */
 	uchar stack[2 * kdf_buf_size + prf_input_size + prf_key_size + prf_output_size + STACK_ALIGN];
@@ -1312,19 +1303,30 @@ void neoscrypt2(uchar * output, const uchar * password, uint32_t profile)
 
 		printf("neoscrypt_blkcpy(), Z = \n");
 		printData(Z, 256);
+		FILE* fp = fopen("chacha.txt", "wt");
 
 		/* Z = SMix(Z) */
 		for (i = 0; i < N; i++) {
 			/* blkcpy(V, Z) */
 			neoscrypt_blkcpy(&V[i * (32 * r)], &Z[0], r * 2 * SCRYPT_BLOCK_SIZE);	//write 256 bytes
+
+			fprintf(fp, "%03X: ", i);
+			fprintDataFPGA(fp, Z, 256);
+
+
 			/* blkmix(Z, Y) */
 			neoscrypt_blkmix(&Z[0], &Y[0], r, (mixmode | 0x0100));		//r=2
 			printf("neoscrypt_blkmix(), Z = \n");
 			printData(Z, 256);
 		}
+		fprintf(fp, "\n");
 		for (i = 0; i < N; i++) {
 			/* integerify(Z) mod N */
 			j = (32 * r) * (Z[16 * (2 * r - 1)] & (N - 1));
+
+			fprintf(fp, "%03X: ", j/64);
+			fprintDataFPGA(fp, &V[j], 256);
+
 			printf("j = %d\n", j / 64);
 			/* blkxor(Z, V) */
 			printf("neoscrypt_read(j=%d), Z = \n", j);
@@ -1335,6 +1337,8 @@ void neoscrypt2(uchar * output, const uchar * password, uint32_t profile)
 			printf("neoscrypt_blkmix(), Z = \n");
 			printData(Z, 256);
 		}
+
+		fclose(fp);
 	}
 
 	printf("neoscrypt chacha result, Z = \n");

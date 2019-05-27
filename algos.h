@@ -24,6 +24,7 @@ enum sha_algos {
 	ALGO_GROESTL,
 	ALGO_HEAVY,		/* Heavycoin hash */
 	ALGO_HMQ1725,
+	ALGO_HONEYCOMB,
 	ALGO_HSR,
 	ALGO_KECCAK,
 	ALGO_KECCAKC,		/* refreshed Keccak with pool factor 256 */
@@ -99,6 +100,7 @@ static const char *algo_names[] = {
 	"groestl",
 	"heavy",
 	"hmq1725",
+	"honeycomb",
 	"hsr",
 	"keccak",
 	"keccakc",

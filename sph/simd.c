@@ -36,6 +36,21 @@
 
 #include "sph_simd.h"
 
+
+static void printData(void* data, int size)
+{
+	int i;
+	for (i = 0; i < size; i++)
+	{
+		printf("%02X", ((unsigned char*)data)[i]);
+		if ((i + 1) % 16 == 0) printf("\n");
+		else if ((i + 1) % 8 == 0) printf(" - ");
+		else if ((i + 1) % 4 == 0) printf(" ");
+}
+	printf("\n");
+}
+
+
 #ifdef __cplusplus
 extern "C"{
 #endif
@@ -61,11 +76,11 @@ typedef sph_s32 s32;
  * The powers of 41 modulo 257. We use exponents from 0 to 255, inclusive.
  */
 static const s32 alpha_tab[] = {
-	  1,  41, 139,  45,  46,  87, 226,  14,  60, 147, 116, 130,
-	190,  80, 196,  69,   2,  82,  21,  90,  92, 174, 195,  28,
+	  1,  41, 139,  45,  46,  87, 226,  14,  60, 147, 116, 130,//12
+	190,  80, 196,  69,   2,  82,  21,  90,  92, 174, 195,  28,//24
 	120,  37, 232,   3, 123, 160, 135, 138,   4, 164,  42, 180,
-	184,  91, 133,  56, 240,  74, 207,   6, 246,  63,  13,  19,
-	  8,  71,  84, 103, 111, 182,   9, 112, 223, 148, 157,  12,
+	184,  91, 133,  56, 240,  74, 207,   6, 246,  63,  13,  19,//48
+	  8,  71,  84, 103, 111, 182,   9, 112, 223, 148, 157,  12,//60
 	235, 126,  26,  38,  16, 142, 168, 206, 222, 107,  18, 224,
 	189,  39,  57,  24, 213, 252,  52,  76,  32,  27,  79, 155,
 	187, 214,  36, 191, 121,  78, 114,  48, 169, 247, 104, 152,
@@ -194,6 +209,7 @@ static const s32 alpha_tab[] = {
 		q[(rb) + 13] = d1_5 - (d2_5 << 5); \
 		q[(rb) + 14] = d1_6 - (d2_6 << 6); \
 		q[(rb) + 15] = d1_7 - (d2_7 << 7); \
+printf("FFT16: q[%d] = \n",rb);printData(&q[(rb) +  0],16*4);\
 	} while (0)
 
 /*
@@ -215,29 +231,8 @@ static const s32 alpha_tab[] = {
 	} while (0)
 
 #if SPH_SMALL_FOOTPRINT_SIMD
-
-static void
-fft32(unsigned char *x, size_t xs, s32 *q)
-{
-	size_t xd;
-
-	xd = xs << 1;
-	FFT16(0, xd, 0);
-	FFT16(xs, xd, 16);
-	FFT_LOOP(0, 16, 8, label_);
-}
-
-#define FFT128(xb, xs, rb, id)   do { \
-		fft32(x + (xb) + ((xs) * 0), (xs) << 2, &q[(rb) +  0]); \
-		fft32(x + (xb) + ((xs) * 2), (xs) << 2, &q[(rb) + 32]); \
-		FFT_LOOP(rb, 32, 4, XCAT(id, aa)); \
-		fft32(x + (xb) + ((xs) * 1), (xs) << 2, &q[(rb) + 64]); \
-		fft32(x + (xb) + ((xs) * 3), (xs) << 2, &q[(rb) + 96]); \
-		FFT_LOOP((rb) + 64, 32, 4, XCAT(id, ab)); \
-		FFT_LOOP(rb, 64, 2, XCAT(id, a)); \
-	} while (0)
-
-#else
+#error SPH_SMALL_FOOTPRINT_SIMD not supported
+#endif
 
 /*
  * Output range: |q| <= 4733784
@@ -248,7 +243,6 @@ fft32(unsigned char *x, size_t xs, s32 *q)
 		FFT_LOOP(rb, 64, 2, id); \
 	} while (0)
 
-#endif
 
 /*
  * For SIMD-384 / SIMD-512, the fully unrolled FFT yields a compression
@@ -268,7 +262,9 @@ fft64(unsigned char *x, size_t xs, s32 *q)
 }
 
 /*
- * Output range: |q| <= 9467568
+0 * Output range: |q| <= 9467568
+ *
+ * FFT256(0, 1, 0, ll);
  */
 #define FFT256(xb, xs, rb, id)   do { \
 		fft64(x + (xb) + ((xs) * 0), (xs) << 2, &q[(rb) +   0]); \
@@ -808,169 +804,6 @@ static const unsigned short yoff_b_f[] = {
 	} while (0)
 
 #if SPH_SMALL_FOOTPRINT_SIMD
-
-#define A0   state[ 0]
-#define A1   state[ 1]
-#define A2   state[ 2]
-#define A3   state[ 3]
-#define B0   state[ 4]
-#define B1   state[ 5]
-#define B2   state[ 6]
-#define B3   state[ 7]
-#define C0   state[ 8]
-#define C1   state[ 9]
-#define C2   state[10]
-#define C3   state[11]
-#define D0   state[12]
-#define D1   state[13]
-#define D2   state[14]
-#define D3   state[15]
-
-#define STEP2_ELT(n, w, fun, s, ppb)   do { \
-		u32 tt = T32(D ## n + (w) + fun(A ## n, B ## n, C ## n)); \
-		A ## n = T32(ROL32(tt, s) + tA[(ppb) ^ n]); \
-		D ## n = C ## n; \
-		C ## n = B ## n; \
-		B ## n = tA[n]; \
-	} while (0)
-
-#define STEP2_SMALL(w0, w1, w2, w3, fun, r, s, pp4b)   do { \
-		u32 tA[4]; \
-		tA[0] = ROL32(A0, r); \
-		tA[1] = ROL32(A1, r); \
-		tA[2] = ROL32(A2, r); \
-		tA[3] = ROL32(A3, r); \
-		STEP2_ELT(0, w0, fun, s, pp4b); \
-		STEP2_ELT(1, w1, fun, s, pp4b); \
-		STEP2_ELT(2, w2, fun, s, pp4b); \
-		STEP2_ELT(3, w3, fun, s, pp4b); \
-	} while (0)
-
-static void
-one_round_small(u32 *state, u32 *w, int isp, int p0, int p1, int p2, int p3)
-{
-	static const int pp4k[] = { 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2 };
-
-	STEP2_SMALL(w[ 0], w[ 1], w[ 2], w[ 3], IF,  p0, p1, pp4k[isp + 0]);
-	STEP2_SMALL(w[ 4], w[ 5], w[ 6], w[ 7], IF,  p1, p2, pp4k[isp + 1]);
-	STEP2_SMALL(w[ 8], w[ 9], w[10], w[11], IF,  p2, p3, pp4k[isp + 2]);
-	STEP2_SMALL(w[12], w[13], w[14], w[15], IF,  p3, p0, pp4k[isp + 3]);
-	STEP2_SMALL(w[16], w[17], w[18], w[19], MAJ, p0, p1, pp4k[isp + 4]);
-	STEP2_SMALL(w[20], w[21], w[22], w[23], MAJ, p1, p2, pp4k[isp + 5]);
-	STEP2_SMALL(w[24], w[25], w[26], w[27], MAJ, p2, p3, pp4k[isp + 6]);
-	STEP2_SMALL(w[28], w[29], w[30], w[31], MAJ, p3, p0, pp4k[isp + 7]);
-}
-
-static void
-compress_small(sph_simd_small_context *sc, int last)
-{
-	unsigned char *x;
-	s32 q[128];
-	int i;
-	u32 w[32];
-	u32 state[16];
-	size_t u;
-
-	static const size_t wsp[32] = {
-		 4 << 3,  6 << 3,  0 << 3,  2 << 3,
-		 7 << 3,  5 << 3,  3 << 3,  1 << 3,
-		15 << 3, 11 << 3, 12 << 3,  8 << 3,
-		 9 << 3, 13 << 3, 10 << 3, 14 << 3,
-		17 << 3, 18 << 3, 23 << 3, 20 << 3,
-		22 << 3, 21 << 3, 16 << 3, 19 << 3,
-		30 << 3, 24 << 3, 25 << 3, 31 << 3,
-		27 << 3, 29 << 3, 28 << 3, 26 << 3
-	};
-
-	x = sc->buf;
-	FFT128(0, 1, 0, ll);
-	if (last) {
-		for (i = 0; i < 128; i ++) {
-			s32 tq;
-
-			tq = q[i] + yoff_s_f[i];
-			tq = REDS2(tq);
-			tq = REDS1(tq);
-			tq = REDS1(tq);
-			q[i] = (tq <= 128 ? tq : tq - 257);
-		}
-	} else {
-		for (i = 0; i < 128; i ++) {
-			s32 tq;
-
-			tq = q[i] + yoff_s_n[i];
-			tq = REDS2(tq);
-			tq = REDS1(tq);
-			tq = REDS1(tq);
-			q[i] = (tq <= 128 ? tq : tq - 257);
-		}
-	}
-
-	for (i = 0; i < 16; i += 4) {
-		state[i + 0] = sc->state[i + 0]
-			^ sph_dec32le_aligned(x + 4 * (i + 0));
-		state[i + 1] = sc->state[i + 1]
-			^ sph_dec32le_aligned(x + 4 * (i + 1));
-		state[i + 2] = sc->state[i + 2]
-			^ sph_dec32le_aligned(x + 4 * (i + 2));
-		state[i + 3] = sc->state[i + 3]
-			^ sph_dec32le_aligned(x + 4 * (i + 3));
-	}
-
-#define WSREAD(sb, o1, o2, mm)   do { \
-		for (u = 0; u < 32; u += 4) { \
-			size_t v = wsp[(u >> 2) + (sb)]; \
-			w[u + 0] = INNER(q[v + 2 * 0 + (o1)], \
-				q[v + 2 * 0 + (o2)], mm); \
-			w[u + 1] = INNER(q[v + 2 * 1 + (o1)], \
-				q[v + 2 * 1 + (o2)], mm); \
-			w[u + 2] = INNER(q[v + 2 * 2 + (o1)], \
-				q[v + 2 * 2 + (o2)], mm); \
-			w[u + 3] = INNER(q[v + 2 * 3 + (o1)], \
-				q[v + 2 * 3 + (o2)], mm); \
-		} \
-	} while (0)
-
-	WSREAD( 0,    0,    1, 185);
-	one_round_small(state, w, 0,  3, 23, 17, 27);
-	WSREAD( 8,    0,    1, 185);
-	one_round_small(state, w, 2, 28, 19, 22,  7);
-	WSREAD(16, -128,  -64, 233);
-	one_round_small(state, w, 1, 29,  9, 15,  5);
-	WSREAD(24, -191, -127, 233);
-	one_round_small(state, w, 0,  4, 13, 10, 25);
-
-#undef WSREAD
-
-	STEP_SMALL(sc->state[ 0], sc->state[ 1], sc->state[ 2], sc->state[ 3],
-		IF,  4, 13, PP4_2_);
-	STEP_SMALL(sc->state[ 4], sc->state[ 5], sc->state[ 6], sc->state[ 7],
-		IF, 13, 10, PP4_0_);
-	STEP_SMALL(sc->state[ 8], sc->state[ 9], sc->state[10], sc->state[11],
-		IF, 10, 25, PP4_1_);
-	STEP_SMALL(sc->state[12], sc->state[13], sc->state[14], sc->state[15],
-		IF, 25,  4, PP4_2_);
-
-	memcpy(sc->state, state, sizeof state);
-}
-
-#undef A0
-#undef A1
-#undef A2
-#undef A3
-#undef B0
-#undef B1
-#undef B2
-#undef B3
-#undef C0
-#undef C1
-#undef C2
-#undef C3
-#undef D0
-#undef D1
-#undef D2
-#undef D3
-
 #else
 
 #if SPH_SIMD_NOCOPY
@@ -1094,245 +927,7 @@ compress_small(sph_simd_small_context *sc, int last)
 #endif
 
 #if SPH_SMALL_FOOTPRINT_SIMD
-
-#define A0   state[ 0]
-#define A1   state[ 1]
-#define A2   state[ 2]
-#define A3   state[ 3]
-#define A4   state[ 4]
-#define A5   state[ 5]
-#define A6   state[ 6]
-#define A7   state[ 7]
-#define B0   state[ 8]
-#define B1   state[ 9]
-#define B2   state[10]
-#define B3   state[11]
-#define B4   state[12]
-#define B5   state[13]
-#define B6   state[14]
-#define B7   state[15]
-#define C0   state[16]
-#define C1   state[17]
-#define C2   state[18]
-#define C3   state[19]
-#define C4   state[20]
-#define C5   state[21]
-#define C6   state[22]
-#define C7   state[23]
-#define D0   state[24]
-#define D1   state[25]
-#define D2   state[26]
-#define D3   state[27]
-#define D4   state[28]
-#define D5   state[29]
-#define D6   state[30]
-#define D7   state[31]
-
-/*
- * Not needed -- already defined for SIMD-224 / SIMD-256
- *
-#define STEP2_ELT(n, w, fun, s, ppb)   do { \
-		u32 tt = T32(D ## n + (w) + fun(A ## n, B ## n, C ## n)); \
-		A ## n = T32(ROL32(tt, s) + tA[(ppb) ^ n]); \
-		D ## n = C ## n; \
-		C ## n = B ## n; \
-		B ## n = tA[n]; \
-	} while (0)
- */
-
-#define STEP2_BIG(w0, w1, w2, w3, w4, w5, w6, w7, fun, r, s, pp8b)   do { \
-		u32 tA[8]; \
-		tA[0] = ROL32(A0, r); \
-		tA[1] = ROL32(A1, r); \
-		tA[2] = ROL32(A2, r); \
-		tA[3] = ROL32(A3, r); \
-		tA[4] = ROL32(A4, r); \
-		tA[5] = ROL32(A5, r); \
-		tA[6] = ROL32(A6, r); \
-		tA[7] = ROL32(A7, r); \
-		STEP2_ELT(0, w0, fun, s, pp8b); \
-		STEP2_ELT(1, w1, fun, s, pp8b); \
-		STEP2_ELT(2, w2, fun, s, pp8b); \
-		STEP2_ELT(3, w3, fun, s, pp8b); \
-		STEP2_ELT(4, w4, fun, s, pp8b); \
-		STEP2_ELT(5, w5, fun, s, pp8b); \
-		STEP2_ELT(6, w6, fun, s, pp8b); \
-		STEP2_ELT(7, w7, fun, s, pp8b); \
-	} while (0)
-
-static void
-one_round_big(u32 *state, u32 *w, int isp, int p0, int p1, int p2, int p3)
-{
-	static const int pp8k[] = { 1, 6, 2, 3, 5, 7, 4, 1, 6, 2, 3 };
-
-	STEP2_BIG(w[ 0], w[ 1], w[ 2], w[ 3], w[ 4], w[ 5], w[ 6], w[ 7],
-		IF,  p0, p1, pp8k[isp + 0]);
-	STEP2_BIG(w[ 8], w[ 9], w[10], w[11], w[12], w[13], w[14], w[15],
-		IF,  p1, p2, pp8k[isp + 1]);
-	STEP2_BIG(w[16], w[17], w[18], w[19], w[20], w[21], w[22], w[23],
-		IF,  p2, p3, pp8k[isp + 2]);
-	STEP2_BIG(w[24], w[25], w[26], w[27], w[28], w[29], w[30], w[31],
-		IF,  p3, p0, pp8k[isp + 3]);
-	STEP2_BIG(w[32], w[33], w[34], w[35], w[36], w[37], w[38], w[39],
-		MAJ, p0, p1, pp8k[isp + 4]);
-	STEP2_BIG(w[40], w[41], w[42], w[43], w[44], w[45], w[46], w[47],
-		MAJ, p1, p2, pp8k[isp + 5]);
-	STEP2_BIG(w[48], w[49], w[50], w[51], w[52], w[53], w[54], w[55],
-		MAJ, p2, p3, pp8k[isp + 6]);
-	STEP2_BIG(w[56], w[57], w[58], w[59], w[60], w[61], w[62], w[63],
-		MAJ, p3, p0, pp8k[isp + 7]);
-}
-
-static void
-compress_big(sph_simd_big_context *sc, int last)
-{
-	unsigned char *x;
-	s32 q[256];
-	int i;
-	u32 w[64];
-	u32 state[32];
-	size_t u;
-
-	static const size_t wbp[32] = {
-		 4 << 4,  6 << 4,  0 << 4,  2 << 4,
-		 7 << 4,  5 << 4,  3 << 4,  1 << 4,
-		15 << 4, 11 << 4, 12 << 4,  8 << 4,
-		 9 << 4, 13 << 4, 10 << 4, 14 << 4,
-		17 << 4, 18 << 4, 23 << 4, 20 << 4,
-		22 << 4, 21 << 4, 16 << 4, 19 << 4,
-		30 << 4, 24 << 4, 25 << 4, 31 << 4,
-		27 << 4, 29 << 4, 28 << 4, 26 << 4
-	};
-
-	x = sc->buf;
-	FFT256(0, 1, 0, ll);
-	if (last) {
-		for (i = 0; i < 256; i ++) {
-			s32 tq;
-
-			tq = q[i] + yoff_b_f[i];
-			tq = REDS2(tq);
-			tq = REDS1(tq);
-			tq = REDS1(tq);
-			q[i] = (tq <= 128 ? tq : tq - 257);
-		}
-	} else {
-		for (i = 0; i < 256; i ++) {
-			s32 tq;
-
-			tq = q[i] + yoff_b_n[i];
-			tq = REDS2(tq);
-			tq = REDS1(tq);
-			tq = REDS1(tq);
-			q[i] = (tq <= 128 ? tq : tq - 257);
-		}
-	}
-
-	for (i = 0; i < 32; i += 8) {
-		state[i + 0] = sc->state[i + 0]
-			^ sph_dec32le_aligned(x + 4 * (i + 0));
-		state[i + 1] = sc->state[i + 1]
-			^ sph_dec32le_aligned(x + 4 * (i + 1));
-		state[i + 2] = sc->state[i + 2]
-			^ sph_dec32le_aligned(x + 4 * (i + 2));
-		state[i + 3] = sc->state[i + 3]
-			^ sph_dec32le_aligned(x + 4 * (i + 3));
-		state[i + 4] = sc->state[i + 4]
-			^ sph_dec32le_aligned(x + 4 * (i + 4));
-		state[i + 5] = sc->state[i + 5]
-			^ sph_dec32le_aligned(x + 4 * (i + 5));
-		state[i + 6] = sc->state[i + 6]
-			^ sph_dec32le_aligned(x + 4 * (i + 6));
-		state[i + 7] = sc->state[i + 7]
-			^ sph_dec32le_aligned(x + 4 * (i + 7));
-	}
-
-#define WBREAD(sb, o1, o2, mm)   do { \
-		for (u = 0; u < 64; u += 8) { \
-			size_t v = wbp[(u >> 3) + (sb)]; \
-			w[u + 0] = INNER(q[v + 2 * 0 + (o1)], \
-				q[v + 2 * 0 + (o2)], mm); \
-			w[u + 1] = INNER(q[v + 2 * 1 + (o1)], \
-				q[v + 2 * 1 + (o2)], mm); \
-			w[u + 2] = INNER(q[v + 2 * 2 + (o1)], \
-				q[v + 2 * 2 + (o2)], mm); \
-			w[u + 3] = INNER(q[v + 2 * 3 + (o1)], \
-				q[v + 2 * 3 + (o2)], mm); \
-			w[u + 4] = INNER(q[v + 2 * 4 + (o1)], \
-				q[v + 2 * 4 + (o2)], mm); \
-			w[u + 5] = INNER(q[v + 2 * 5 + (o1)], \
-				q[v + 2 * 5 + (o2)], mm); \
-			w[u + 6] = INNER(q[v + 2 * 6 + (o1)], \
-				q[v + 2 * 6 + (o2)], mm); \
-			w[u + 7] = INNER(q[v + 2 * 7 + (o1)], \
-				q[v + 2 * 7 + (o2)], mm); \
-		} \
-	} while (0)
-
-	WBREAD( 0,    0,    1, 185);
-	one_round_big(state, w, 0,  3, 23, 17, 27);
-	WBREAD( 8,    0,    1, 185);
-	one_round_big(state, w, 1, 28, 19, 22,  7);
-	WBREAD(16, -256, -128, 233);
-	one_round_big(state, w, 2, 29,  9, 15,  5);
-	WBREAD(24, -383, -255, 233);
-	one_round_big(state, w, 3,  4, 13, 10, 25);
-
-#undef WBREAD
-
-	STEP_BIG(
-		sc->state[ 0], sc->state[ 1], sc->state[ 2], sc->state[ 3],
-		sc->state[ 4], sc->state[ 5], sc->state[ 6], sc->state[ 7],
-		IF,  4, 13, PP8_4_);
-	STEP_BIG(
-		sc->state[ 8], sc->state[ 9], sc->state[10], sc->state[11],
-		sc->state[12], sc->state[13], sc->state[14], sc->state[15],
-		IF, 13, 10, PP8_5_);
-	STEP_BIG(
-		sc->state[16], sc->state[17], sc->state[18], sc->state[19],
-		sc->state[20], sc->state[21], sc->state[22], sc->state[23],
-		IF, 10, 25, PP8_6_);
-	STEP_BIG(
-		sc->state[24], sc->state[25], sc->state[26], sc->state[27],
-		sc->state[28], sc->state[29], sc->state[30], sc->state[31],
-		IF, 25,  4, PP8_0_);
-
-	memcpy(sc->state, state, sizeof state);
-}
-
-#undef A0
-#undef A1
-#undef A2
-#undef A3
-#undef A4
-#undef A5
-#undef A6
-#undef A7
-#undef B0
-#undef B1
-#undef B2
-#undef B3
-#undef B4
-#undef B5
-#undef B6
-#undef B7
-#undef C0
-#undef C1
-#undef C2
-#undef C3
-#undef C4
-#undef C5
-#undef C6
-#undef C7
-#undef D0
-#undef D1
-#undef D2
-#undef D3
-#undef D4
-#undef D5
-#undef D6
-#undef D7
-
+	#error not supported
 #else
 
 #if SPH_SIMD_NOCOPY
@@ -1386,7 +981,10 @@ compress_big(sph_simd_big_context *sc, int last)
 #endif
 
 	x = sc->buf;
+	printData(x, 128);
 	FFT256(0, 1, 0, ll);
+
+	printData(q, 256 * 4);
 	if (last) {
 		for (i = 0; i < 256; i ++) {
 			s32 tq;
@@ -1408,6 +1006,9 @@ compress_big(sph_simd_big_context *sc, int last)
 			q[i] = (tq <= 128 ? tq : tq - 257);
 		}
 	}
+	printf("q after REDS\n\n");
+	printData(q, 256 * 4);
+
 	READ_STATE_BIG(sc);
 	A0 ^= sph_dec32le_aligned(x +   0);
 	A1 ^= sph_dec32le_aligned(x +   4);
@@ -1441,6 +1042,12 @@ compress_big(sph_simd_big_context *sc, int last)
 	D5 ^= sph_dec32le_aligned(x + 116);
 	D6 ^= sph_dec32le_aligned(x + 120);
 	D7 ^= sph_dec32le_aligned(x + 124);
+
+	printf("A0-A7: %08X %08X %08X %08X %08X %08X %08X %08X \n", A0, A1, A2, A3, A4, A5, A6, A7);
+	printf("B0-B7: %08X %08X %08X %08X %08X %08X %08X %08X \n", B0, B1, B2, B3, B4, B5, B6, B7);
+	printf("C0-C7: %08X %08X %08X %08X %08X %08X %08X %08X \n", C0, C1, C2, C3, C4, C5, C6, C7);
+	printf("D0-D7: %08X %08X %08X %08X %08X %08X %08X %08X \n", D0, D1, D2, D3, D4, D5, D6, D7);
+	
 
 	ONE_ROUND_BIG(0_, 0,  3, 23, 17, 27);
 	ONE_ROUND_BIG(1_, 1, 28, 19, 22,  7);
@@ -1685,10 +1292,14 @@ finalize_big(void *cc, unsigned ub, unsigned n, void *dst, size_t dst_len)
 		memset(sc->buf + sc->ptr, 0,
 			(sizeof sc->buf) - sc->ptr);
 		sc->buf[sc->ptr] = ub & (0xFF << (8 - n));
+		printf("about to simd...(%d bytes) \n", sc->ptr);
+		printData(sc->buf, 128);
 		compress_big(sc, 0);
 	}
 	memset(sc->buf, 0, sizeof sc->buf);
 	encode_count_big(sc->buf, sc->count_low, sc->count_high, sc->ptr, n);
+	printf("about to complete simd...\n");
+	printData(sc->buf, 128);
 	compress_big(sc, 1);
 	d = dst;
 	for (d = dst, u = 0; u < dst_len; u ++)

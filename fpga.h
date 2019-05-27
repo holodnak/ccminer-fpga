@@ -29,6 +29,7 @@
 
 void printData(void* data, int size);
 void printData32(void* data, int size);
+void fprintDataFPGA(FILE* fp, void* data, int size);
 void printDataFPGA(void *data, int size);
 void printDataFPGAs(void* data, int size);
 void printDataC(void *data, int size);

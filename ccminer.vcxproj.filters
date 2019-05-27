@@ -43,6 +43,9 @@
     <Filter Include="Source Files\sia">
       <UniqueIdentifier>{86a896c0-1688-4854-98e0-285d166069a3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="honey">
+      <UniqueIdentifier>{7f213152-752a-442d-a8f2-06441c5d009c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="compat\jansson\dump.c">
@@ -242,6 +245,33 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="freq.cpp" />
+    <ClCompile Include="scan_honeycomb.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_five.c">
+      <Filter>honey</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_four.c">
+      <Filter>honey</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_one.c">
+      <Filter>honey</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_six.c">
+      <Filter>honey</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_three.c">
+      <Filter>honey</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_two.c">
+      <Filter>honey</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facets_helper.c">
+      <Filter>honey</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb.c">
+      <Filter>honey</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">
@@ -411,6 +441,30 @@
     </ClInclude>
     <ClInclude Include="lyra2\lyrav3\Lyra3.h">
       <Filter>Header Files\lyra2</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_five.h">
+      <Filter>honey</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_four.h">
+      <Filter>honey</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_one.h">
+      <Filter>honey</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_six.h">
+      <Filter>honey</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_three.h">
+      <Filter>honey</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_two.h">
+      <Filter>honey</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\honeycomb_types.h">
+      <Filter>honey</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb.h">
+      <Filter>honey</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

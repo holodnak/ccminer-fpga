@@ -96,7 +96,14 @@ void printDataC(void *data, int size)
 	printf("};\n");
 }
 
-void printDataFPGA(void *data, int size)
+void fprintDataFPGA(FILE* fp, void* data, int size)
+{
+	while (size > 0)
+		fprintf(fp, "%02X", ((unsigned char*)data)[--size]);
+	fprintf(fp, "\n");
+}
+
+void printDataFPGA(void* data, int size)
 {
 	while (size > 0)
 		printf("%02X", ((unsigned char*)data)[--size]);
@@ -762,7 +769,7 @@ void fpga_check_licenses(int algo)
 	uint8_t* buf;
 	uint8_t* p;
 	FILE* fp;
-	int n;
+	int n=0;
 
 	p = buf = fpga_find_devices_by_path();
 
@@ -782,6 +789,7 @@ void fpga_check_licenses(int algo)
 		fpgainfo_t info;
 		char dna[64];
 		char* dnap, out[128];
+		char* dnap2, out2[128];
 
 
 		fd = fpga_open_port(port);
@@ -797,6 +805,8 @@ void fpga_check_licenses(int algo)
 
 		dnap = make_hex_str(8, dna + 8, (char*)out);
 
+		dnap2 = make_hex_str(16, dna, (char*)out2);
+
 		if (info.data_size == 0 && info.version == 0) {
 			//			printf("no FPGA found.\n");
 			continue;
@@ -804,7 +814,7 @@ void fpga_check_licenses(int algo)
 
 		if (info.algo_id == algo) {
 			printf(" + COM%u...", port);
-			printf("found FPGA (%s): %s", fpga_algo_id_to_string(info.algo_id), dnap);
+			printf("found FPGA (%s): %s", fpga_algo_id_to_string(info.algo_id), dnap2);
 			if (id != 0xDeadBeefCafeC0deULL) {
 				printf(" (ident failed: received: %08X%08X).", (uint32_t)(id >> 32), (uint32_t)(id & 0xFFFFFFFF));
 				if (ignore_bad_ident == 0) {
@@ -901,7 +911,7 @@ int fpga_init_device(int fd, int sz, int startclk)
 	fpga_send_start(fd);
 
 	//init clocks
-	fpga_freq_init(fd, sz, startclk);
+	//fpga_freq_init(fd, sz, startclk);
 
 	applog(LOG_INFO, "FPGA is ready.");
 

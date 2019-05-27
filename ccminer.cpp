@@ -2746,6 +2746,7 @@ static void *miner_thread(void *userdata)
 			case ALGO_HEAVY:
 			case ALGO_JACKPOT:
 			case ALGO_JHA:
+			case ALGO_HONEYCOMB:
 			case ALGO_HSR:
 			case ALGO_LYRA2v2:
 			case ALGO_LYRA2v3:
@@ -2850,6 +2851,10 @@ static void *miner_thread(void *userdata)
 
 		case ALGO_NEOSCRYPT:
 			rc = scanhash_neoscrypt(thr_id, &work, max_nonce, &hdone64);
+			break;
+
+		case ALGO_HONEYCOMB:
+			rc = scanhash_honeycomb(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 		case ALGO_BSHA3:

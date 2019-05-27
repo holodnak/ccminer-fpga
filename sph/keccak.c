@@ -1642,7 +1642,7 @@ keccak_core(sph_keccak_context* kc, const void *data, size_t len, size_t lim)
 		} u; \
 		size_t j; \
  \
-		eb = 6;/*(0x100 | (ub & 0xFF)) >> (8 - n);*/ \
+		eb = (0x100 | (ub & 0xFF)) >> (8 - n); \
 		if (kc->ptr == (lim - 1)) { \
 			if (n == 7) { \
 				u.tmp[0] = eb; \
@@ -1674,6 +1674,8 @@ keccak_core(sph_keccak_context* kc, const void *data, size_t len, size_t lim)
 	} \
 
 #else
+
+#ifdef BSHA3
 
 #define DEFCLOSE(d, lim) \
 	static void keccak_close ## d( \
@@ -1725,6 +1727,61 @@ keccak_core(sph_keccak_context* kc, const void *data, size_t len, size_t lim)
 		memcpy(dst, u.tmp, d); \
 		keccak_init(kc, (unsigned)d << 3); \
 	} \
+
+#else
+
+#define DEFCLOSE(d, lim) \
+	static void keccak_close ## d( \
+		sph_keccak_context *kc, unsigned ub, unsigned n, void *dst) \
+	{ \
+		unsigned eb; \
+		union { \
+			unsigned char tmp[lim + 1]; \
+			sph_u64 dummy;   /* for alignment */ \
+		} u; \
+		size_t j; \
+ \
+		eb = (0x100 | (ub & 0xFF)) >> (8 - n); \
+		if (kc->ptr == (lim - 1)) { \
+			if (n == 7) { \
+				u.tmp[0] = eb; \
+				memset(u.tmp + 1, 0, lim - 1); \
+				u.tmp[lim] = 0x80; \
+				j = 1 + lim; \
+			} else { \
+				u.tmp[0] = eb | 0x80; \
+				j = 1; \
+			} \
+		} else { \
+			j = lim - kc->ptr; \
+			u.tmp[0] = eb; \
+			memset(u.tmp + 1, 0, j - 2); \
+			u.tmp[j - 1] = 0x80; \
+		} \
+		keccak_core(kc, u.tmp, j, lim); \
+		/* Finalize the "lane complement" */ \
+		kc->u.narrow[ 2] = ~kc->u.narrow[ 2]; \
+		kc->u.narrow[ 3] = ~kc->u.narrow[ 3]; \
+		kc->u.narrow[ 4] = ~kc->u.narrow[ 4]; \
+		kc->u.narrow[ 5] = ~kc->u.narrow[ 5]; \
+		kc->u.narrow[16] = ~kc->u.narrow[16]; \
+		kc->u.narrow[17] = ~kc->u.narrow[17]; \
+		kc->u.narrow[24] = ~kc->u.narrow[24]; \
+		kc->u.narrow[25] = ~kc->u.narrow[25]; \
+		kc->u.narrow[34] = ~kc->u.narrow[34]; \
+		kc->u.narrow[35] = ~kc->u.narrow[35]; \
+		kc->u.narrow[40] = ~kc->u.narrow[40]; \
+		kc->u.narrow[41] = ~kc->u.narrow[41]; \
+		/* un-interleave */ \
+		for (j = 0; j < 50; j += 2) \
+			UNINTERLEAVE(kc->u.narrow[j], kc->u.narrow[j + 1]); \
+		for (j = 0; j < d; j += 4) \
+			sph_enc32le_aligned(u.tmp + j, kc->u.narrow[j >> 2]); \
+		memcpy(dst, u.tmp, d); \
+		keccak_init(kc, (unsigned)d << 3); \
+	} \
+
+#endif
 
 #endif
 
