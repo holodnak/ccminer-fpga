@@ -34,8 +34,8 @@ Thumbs.db
 
 Debug/
 Release/
-x64/Debug/
-x64/Release/
+x64/
+gendevpools/gendevpools/x64/
 *.suo
 *.user
 *.opensdf
@@ -43,6 +43,8 @@ x64/Release/
 *.pdb
 *.VC.opendb
 *.VC.db
+
+
 
 .settings/
 .project

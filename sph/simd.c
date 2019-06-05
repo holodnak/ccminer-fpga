@@ -37,20 +37,6 @@
 #include "sph_simd.h"
 
 
-static void printData(void* data, int size)
-{
-	int i;
-	for (i = 0; i < size; i++)
-	{
-		printf("%02X", ((unsigned char*)data)[i]);
-		if ((i + 1) % 16 == 0) printf("\n");
-		else if ((i + 1) % 8 == 0) printf(" - ");
-		else if ((i + 1) % 4 == 0) printf(" ");
-}
-	printf("\n");
-}
-
-
 #ifdef __cplusplus
 extern "C"{
 #endif
@@ -209,7 +195,6 @@ static const s32 alpha_tab[] = {
 		q[(rb) + 13] = d1_5 - (d2_5 << 5); \
 		q[(rb) + 14] = d1_6 - (d2_6 << 6); \
 		q[(rb) + 15] = d1_7 - (d2_7 << 7); \
-printf("FFT16: q[%d] = \n",rb);printData(&q[(rb) +  0],16*4);\
 	} while (0)
 
 /*
@@ -981,10 +966,10 @@ compress_big(sph_simd_big_context *sc, int last)
 #endif
 
 	x = sc->buf;
-	printData(x, 128);
+
 	FFT256(0, 1, 0, ll);
 
-	printData(q, 256 * 4);
+
 	if (last) {
 		for (i = 0; i < 256; i ++) {
 			s32 tq;
@@ -1006,8 +991,6 @@ compress_big(sph_simd_big_context *sc, int last)
 			q[i] = (tq <= 128 ? tq : tq - 257);
 		}
 	}
-	printf("q after REDS\n\n");
-	printData(q, 256 * 4);
 
 	READ_STATE_BIG(sc);
 	A0 ^= sph_dec32le_aligned(x +   0);
@@ -1043,11 +1026,6 @@ compress_big(sph_simd_big_context *sc, int last)
 	D6 ^= sph_dec32le_aligned(x + 120);
 	D7 ^= sph_dec32le_aligned(x + 124);
 
-	printf("A0-A7: %08X %08X %08X %08X %08X %08X %08X %08X \n", A0, A1, A2, A3, A4, A5, A6, A7);
-	printf("B0-B7: %08X %08X %08X %08X %08X %08X %08X %08X \n", B0, B1, B2, B3, B4, B5, B6, B7);
-	printf("C0-C7: %08X %08X %08X %08X %08X %08X %08X %08X \n", C0, C1, C2, C3, C4, C5, C6, C7);
-	printf("D0-D7: %08X %08X %08X %08X %08X %08X %08X %08X \n", D0, D1, D2, D3, D4, D5, D6, D7);
-	
 
 	ONE_ROUND_BIG(0_, 0,  3, 23, 17, 27);
 	ONE_ROUND_BIG(1_, 1, 28, 19, 22,  7);
@@ -1292,14 +1270,10 @@ finalize_big(void *cc, unsigned ub, unsigned n, void *dst, size_t dst_len)
 		memset(sc->buf + sc->ptr, 0,
 			(sizeof sc->buf) - sc->ptr);
 		sc->buf[sc->ptr] = ub & (0xFF << (8 - n));
-		printf("about to simd...(%d bytes) \n", sc->ptr);
-		printData(sc->buf, 128);
 		compress_big(sc, 0);
 	}
 	memset(sc->buf, 0, sizeof sc->buf);
 	encode_count_big(sc->buf, sc->count_low, sc->count_high, sc->ptr, n);
-	printf("about to complete simd...\n");
-	printData(sc->buf, 128);
 	compress_big(sc, 1);
 	d = dst;
 	for (d = dst, u = 0; u < dst_len; u ++)

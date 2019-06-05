@@ -18,6 +18,8 @@
 
 volatile int cur_freq = 0;
 
+extern int clock_ctrl_disable;
+
 int translate_freq(uint8_t fr)
 {
 	fr &= 0x7F;
@@ -45,12 +47,18 @@ int translate_freq(uint8_t fr)
 	case 0x12: return(340);
 	case 0x13: return(360);
 	case 0x14: return(380);
-	case 0x15: return(100);
+	case 0x15: return(400);
+	case 0x16: return(420);
+	case 0x17: return(440);
+	case 0x18: return(460);
+	case 0x19: return(480);
+	case 0x1A: return(100);
+	case 0x1B: return(200);
 	}
 	return(0);
 }
 
-static int mhz_to_freq(int fr)
+int mhz_to_freq(int fr)
 {
 	int i;
 
@@ -78,7 +86,7 @@ int fpga_set_freq(int fd, int fr)
 
 	fpga_get_freq(fd);
 
-	return 0;
+	return 1;
 }
 
 uint8_t fpga_get_freq(int fd)
@@ -86,21 +94,27 @@ uint8_t fpga_get_freq(int fd)
 	uint8_t buf[8];
 	uint8_t ret;
 
-	fpga_send_command(fd, 0x02);
+	fpga_send_command(fd, 0x04);
 	fpga_recv_response(fd, buf);
 
-	ret = buf[1] & 0x7F;
+	ret = buf[5] & 0x7F;
 
 //	printf("fpga_get_freq: current freq is %02X (%d MHz)...\n", ret, translate_freq(ret));
 
 	return ret;
 }
 
-static int freq_seq[] = { 100, 300, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
+//static int freq_seq[] = { 100, 300, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
+
+//static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400,420,440,460,480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
+static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
 
 int fpga_freq_increase(int fd)
 {
 	int i;
+
+	if (clock_ctrl_disable == 1)
+		return 0;
 
 	for (i = 0; freq_seq[i] != -1; i++) {
 		if (freq_seq[i] > cur_freq) {
@@ -111,14 +125,15 @@ int fpga_freq_increase(int fd)
 
 	applog(LOG_INFO, "Setting frequency to (%d MHz).", cur_freq);
 
-//	printf("fpga_freq_increase: new freq = 0x%02X", cur_freq);
-
 	return fpga_set_freq(fd, cur_freq);
 }
 
 int fpga_freq_decrease(int fd)
 {
 	int i;
+
+	if (clock_ctrl_disable == 1)
+		return 0;
 
 	for (i = 0; freq_seq[i] != -1; i++);
 	i--;
@@ -137,7 +152,8 @@ int fpga_freq_decrease(int fd)
 int fpga_freq_init(int fd, int sz, int startclk)
 {
 
-	int n, boot_seq[] = { 100, 300, 500, -1 };
+//	int n, boot_seq[] = { 100, 200, 300, 400, -1 };
+	int n, boot_seq[] = { 400, -1 };
 	int start_freq = 100;
 
 	//get current operating freq
@@ -161,21 +177,21 @@ int fpga_freq_init(int fd, int sz, int startclk)
 
 		applog(LOG_INFO, "Trying starting clock rate of %dmhz.", start_freq);
 		Sleep(250);	fpga_send_data(fd, buf, sz);
-		Sleep(250);	fpga_send_data(fd, buf, sz);
-		Sleep(250);	fpga_send_data(fd, buf, sz);
-		Sleep(250);	fpga_send_data(fd, buf, sz);
+		//Sleep(250);	fpga_send_data(fd, buf, sz);
+		//Sleep(250);	fpga_send_data(fd, buf, sz);
+		//Sleep(250);	fpga_send_data(fd, buf, sz);
 
 		for (n = 0; boot_seq[n] != -1; n++) {
 			applog(LOG_INFO, "Increasing clock: %dmhz...", boot_seq[n]);
 			fpga_set_freq(fd, boot_seq[n]);
 			Sleep(250);	fpga_send_data(fd, buf, sz);
-			Sleep(250);	fpga_send_data(fd, buf, sz);
-			Sleep(250);	fpga_send_data(fd, buf, sz);
+			//Sleep(250);	fpga_send_data(fd, buf, sz);
+			//Sleep(250);	fpga_send_data(fd, buf, sz);
 			cur_freq = boot_seq[n];
 			fpga_send_data(fd, buf, sz);
-			Sleep(250);	fpga_send_data(fd, buf, sz);
-			Sleep(250);	fpga_send_data(fd, buf, sz);
-			Sleep(250);	fpga_send_data(fd, buf, sz);
+			//Sleep(250);	fpga_send_data(fd, buf, sz);
+			//Sleep(250);	fpga_send_data(fd, buf, sz);
+			//Sleep(250);	fpga_send_data(fd, buf, sz);
 		}
 		delete[] buf;
 	}
@@ -251,12 +267,10 @@ int fpga_freq_check_keys(int fd)
 	switch (key) {
 
 	case '+':
-		fpga_freq_increase(fd);
-		return 1;
+		return fpga_freq_increase(fd);
 
 	case '-':
-		fpga_freq_decrease(fd);
-		return 1;
+		return fpga_freq_decrease(fd);
 
 	case 'C':
 	case 'c':

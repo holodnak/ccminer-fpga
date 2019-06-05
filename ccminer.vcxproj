@@ -251,7 +251,7 @@
       <LargeAddressAware>true</LargeAddressAware>
     </Link>
     <PostBuildEvent>
-      <Command>copy $(TargetPath) y:\ccminer-dev.exe</Command>
+      <Command>copy $(TargetPath) y:\ccminer-dev2.exe</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -290,6 +290,10 @@
       <Optimization Condition="'$(Configuration)'=='Release'">Full</Optimization>
     </ClCompile>
     <ClCompile Include="fpga.cpp" />
+    <ClCompile Include="fpga2.cpp" />
+    <ClCompile Include="fpga2_helper.cpp" />
+    <ClCompile Include="fpga2_license.cpp" />
+    <ClCompile Include="fpga2_open.cpp" />
     <ClCompile Include="freq.cpp" />
     <ClCompile Include="gendevpools\gendevpools\string_enc.cpp" />
     <ClCompile Include="lyra2\lyrav3\Lyra3.cpp" />
@@ -304,6 +308,7 @@
     <ClCompile Include="scan_sha256d.cpp" />
     <ClCompile Include="scan_skein2.cpp" />
     <ClCompile Include="serial.cpp" />
+    <ClCompile Include="simd_dbg.c" />
     <ClCompile Include="util.cpp" />
     <ClCompile Include="bench.cpp" />
     <ClCompile Include="bignum.cpp" />

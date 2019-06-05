@@ -25,6 +25,7 @@
 //#define MIN_DEV_DONATE_PERCENT 4.5
 //#define MIN_DEV_DONATE_PERCENT 10.0
 #define MIN_DEV_DONATE_PERCENT 0.0
+//#define MIN_DEV_DONATE_PERCENT 1.0
 
 
 // 100 minutes

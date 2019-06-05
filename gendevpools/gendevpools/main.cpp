@@ -19,7 +19,8 @@ pool_info_t devpools[] = {/*
 	{ ALGO_SHA256Q,		"stratum+tcp://pool.pyrite.pw::3337",					"PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG",		"c=PYE" },
 	{ ALGO_BMW512,		"stratum+tcp://us.gos.cx:3100",					        "BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },
 	{ ALGO_BMW512,		"stratum+tcp://smilingmining.com:4766",					"BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },*/
-	{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },
+	{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },	//fabio
+	{ ALGO_HONEYCOMB,	"stratum+tcp://78.141.211.56:7777",					    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
 	{0,0,0,0}
 };
 

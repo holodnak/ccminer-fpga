@@ -22,6 +22,10 @@
 #include "serial.h"
 #include "algos.h"
 
+#define DISABLE_CLOCK_CONTROL 1
+
+int clock_ctrl_disable = 0;
+
 struct {
 	int ccid, id;
 } algo_conv[] = {
@@ -35,6 +39,7 @@ struct {
 	{ ALGO_BMW512, ALGOID_BMW512 },
 	{ ALGO_PHI, ALGOID_PHI1612 },
 	{ ALGO_BSHA3, ALGOID_BSHA3 },
+	{ ALGO_HONEYCOMB, ALGOID_HONEYCOMB },
 	{ -1, -1 }
 };
 
@@ -50,6 +55,7 @@ struct algo_id_str_s algo_id_str[] = {
 	{ ALGOID_BMW512,	"BMW512" },
 	{ ALGOID_PHI1612,	"PHI1612" },
 	{ ALGOID_BSHA3,		"BSHA3" },
+	{ ALGOID_HONEYCOMB,	"Honeycomb" },
 	{ 0xFF, "" }
 };
 
@@ -297,41 +303,6 @@ static uint64_t make_u64(char* data)
 	return ret;
 }
 
-int FindFiles(char* filter, void (*cb)(void*, char*), void* data)
-{
-	WIN32_FIND_DATA ffd;
-	LARGE_INTEGER filesize;
-	TCHAR szDir[MAX_PATH];
-	size_t length_of_arg;
-	HANDLE hFind = INVALID_HANDLE_VALUE;
-	DWORD dwError = 0;
-
-
-	hFind = FindFirstFile(filter, &ffd);
-	if (INVALID_HANDLE_VALUE == hFind)
-	{
-		printf("FindFirstFile error\n");
-		return -1;
-	}
-
-	do
-	{
-		if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-		{
-			printf("Loading license file %s.\n", ffd.cFileName);
-			cb(data, ffd.cFileName);
-		}
-	} while (FindNextFile(hFind, &ffd) != 0);
-
-	dwError = GetLastError();
-	if (dwError != ERROR_NO_MORE_FILES)
-	{
-		printf("FindNextFile error\n");
-	}
-
-	FindClose(hFind);
-	return 0;
-}
 
 typedef struct license_s {
 	char hash[256 * 4 + 1];
@@ -339,243 +310,16 @@ typedef struct license_s {
 } license_t;
 
 
-
-#include "sph/sph_types.h"
-
-void find_cb(void* data, char* str);
-
-class FpgaManager {
-private:
-	bool m_authvalid;
-	license_t licenses[256];
-	int num_lic;
-
-private:
-	char* EatInvalid(char* str) {
-		char* p = str;
-
-		while (!IsValidChar(*p))
-			p++;
-		return p;
-	}
-	bool IsValidChar(char ch) {
-		bool is_lower = ch >= 'a' && ch <= 'z';
-		bool is_upper = ch >= 'A' && ch <= 'Z';
-		bool is_num = ch >= '0' && ch <= '9';
-		if (is_lower || is_upper || is_num)
-			return true;
-		return false;
-	}
-
-	void Add(char* id, char* hash) {
-		if (Get(id) == 0) {
-			strncpy((char*)licenses[num_lic].dna, id, 16 * 4);
-			strncpy((char*)licenses[num_lic].hash, hash, 256 * 4);
-			num_lic++;
-		}
-	}
-
-	void ProcessLine(char* str) {
-		char buf[1024], buf2[1024];
-		char* p = EatInvalid(str), * p2;
-		int len;
-		char* nn = str;
-
-		memset(buf, 0, 1024);
-		memset(buf2, 0, 1024);
-
-		while (*nn == ' ' || *nn == '\t')
-			nn++;
-		if (*nn == '#')
-			return;
-
-		//copy dna
-		p2 = buf;
-		for (len = 0; len < 1023 && IsValidChar(*p); len++)
-			*p2++ = *p++;
-
-		p = EatInvalid(p);
-
-		//copy dna hash
-		p2 = buf2;
-		for (len = 0; len < 1023 && IsValidChar(*p); len++)
-			* p2++ = *p++;
-
-		Add(buf, buf2);
-	}
-	license_t * Get(char* id) {
-		int i;
-		for (i = 0; i < num_lic; i++) {
-			if (strncmp(id, (const char*)licenses[i].dna, strlen(id)) == 0)
-				return(&licenses[i]);
-		}
-		return 0;
-	}
-public:
-
-	FpgaManager() {
-		memset(licenses, 0, sizeof(license_t) * 256);
-		num_lic = 0;
-		m_authvalid = false;
-
-		FindFiles("fpgalic*.txt", find_cb, (void*)this);
-
-	}
-
-	~FpgaManager() {
-
-	}
-
-	bool Load(char* fn) {
-		FILE* fp;
-		char line[1024];
-
-		if ((fp = fopen(fn, "rt")) == 0) {
-			printf("error opening license file '%s'\n", fn);
-			return false;
-		}
-		while (1) {
-			fgets(line, 1024, fp);
-			ProcessLine(line);
-			if (feof(fp))
-				break;
-		}
-
-		fclose(fp);
-
-		return true;
-	}
-
-#define H_Func(c0, c1, a, b, c, d)   do { \
-		a = SPH_T64(a + b + (c1)); \
-		d = SPH_ROTR64(d ^ a, 32); \
-		c = SPH_T64(c + d); \
-		b = SPH_ROTR64(b ^ c, 25); \
-		a = SPH_T64(a + b + (c0)); \
-		d = SPH_ROTR64(d ^ a, 16); \
-		c = SPH_T64(c + d); \
-		b = SPH_ROTR64(b ^ c, 11); \
-	} while (0)
-
-	void Gen(uint8_t * data) {
-
-	}
-
-	bool Check(char* data) {
-		license_t* lic = 0;
-
-		//find license for dna
-		lic = Get(data);
-
-		if (lic == 0) {
-			//applog(LOG_INFO, "No license data found for DNA '%s'.", data);
-			return false;
-		}
-
-		//check hash
-		//applog(LOG_INFO, "License: %s", lic->hash);
-		//applog(LOG_INFO, "License DNA:  %s", lic->dna);
-
-		sph_u64 a, b, c, d, t1, t2;
-		sph_u64 e, f, g, h;
-
-		t1 = make_u64((char*)lic->dna);
-		t2 = make_u64((char*)lic->dna);
-		e = make_u64((char*)lic->hash);
-		f = make_u64((char*)lic->hash + 16);
-		g = make_u64((char*)lic->hash + 32);
-		h = make_u64((char*)lic->hash + 48);
-
-		//printf("license dna:  %016llx\n", t);
-
-		a = t1; b = t1; c = t2; d = t2;
-
-		H_Func(0, 0, a, b, c, d);
-		H_Func(0, 0, b, c, d, a);
-		H_Func(0, 0, c, d, a, b);
-		H_Func(0, 0, d, a, b, c);
-		H_Func(0, 0, a, b, c, d);
-		H_Func(0, 0, b, c, d, a);
-		H_Func(0, 0, c, d, a, b);
-		H_Func(0, 0, d, a, b, c);
-
-
-		//printf("license want:   %016llx%016llx%016llx%016llx\n", a, b, c, d);
-		//printf("license given:  %016llx%016llx%016llx%016llx\n", e, f, g, h);
-
-		return ((a == e) && (b == f) && (c == g) && (d == h));
-	}
-
-	int Count() { return(num_lic); }
-};
-
-void find_cb(void* data, char* str) {
-	FpgaManager* fm = (FpgaManager*)data;
-
-	fm->Load(str);
-}
-
-
-/**************************************/
-//FPGA DNA: 0000000000000011 D1CF2B4512464301
-//FPGA DNA: 0000000000000011 29CAC17108824401
-
-//vcu
-//REGISTER.EFUSE.DNA_PORT	400200000117E7A94490C585
-
-//bcu
-//REGISTER.EFUSE.DNA_PORT	400200000128A7071C208245
-
-
 /*********************************************************************************************************************/
-
-static bool read_fpga_dna(int fd, uint32_t* dna)
-{
-	uint32_t buf[2];
-
-	fpga_send_command(fd, 0x10);
-	fpga_recv_response(fd, (uint8_t*)buf);
-
-	dna[0] = buf[0];
-	dna[1] = buf[1];
-
-	fpga_send_command(fd, 0x11);
-	fpga_recv_response(fd, (uint8_t*)buf);
-
-	dna[2] = buf[0];
-	dna[3] = buf[1];
-
-	/*
-	dna[0] = 0xdeadbeef;
-	dna[1] = 0xdeadbeef;
-	dna[2] = 0;
-	dna[3] = 0x80000000;
-	*/
-
-	char* p1, * p2;
-	uint32_t dna2[4];
-
-	p1 = (char*)dna;
-	p2 = (char*)dna2;
-	int i;
-	for (i = 0; i < 16; i++) {
-		p2[i] = p1[15 - i];
-	}
-	memcpy(p1, p2, 16);
-	return true;
-}
-
-/**************************************/
-
-FpgaManager licman;
 
 int fpga_open(const char *devpath)
 {
-	int baud = 115200;
+//	int baud = 115200;
+	int baud = 1000000;
 	int timeout = 1;
 	int ret;
 
-	ret = serial_open(devpath, baud, timeout, 1);
+	ret = serial_open(devpath, baud, timeout, true);
 
 	return(ret);
 }
@@ -600,8 +344,9 @@ void fpga_close(int fd)
 	_close(fd);
 }
 
-int fpga_read(int fd, void *buf, size_t sz, size_t *read_sz)
+int fpga_read(int fd, void *buf, size_t sz, size_t * read_sz)
 {
+	*read_sz = 0;
 	memset(buf, 0, 8);
 	return serial_recv(fd, (char*)buf, sz, read_sz);
 }
@@ -657,11 +402,18 @@ int fpga_send_start(int fd)
 {
 	int i;
 	int ret=0;
-	uint8_t cmd = 0x55;
+	uint8_t cmd00 = 0x00;
+	uint8_t cmd55 = 0x55;
 
-	for (i = 0; i < 512*2; i++) {
-		ret += fpga_write(fd, &cmd, 1);
-	}
+	for (i = 0; i < 1024; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset
+//	for (i = 0; i < 672; i++)	ret += fpga_write(fd, &cmd00, 1);	//send null data to hash w/high difficulty
+//	for (i = 0; i < 1024; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset again
+
+	size_t bytesread = 0;
+	char buf[32768];
+
+	fpga_read(fd, buf, 32768, &bytesread);
+
 	return ret;
 }
 
@@ -706,14 +458,21 @@ int fpga_recv_response(int fd, uint8_t *buf)
 int fpga_get_info(int fd, fpgainfo_t *info)
 {
 	uint8_t buf[8];
+	uint8_t buf2[8];
 
-	fpga_send_command(fd, 0x01);
+	fpga_send_command(fd, 0x02);
 	fpga_recv_response(fd, buf);
 
-	info->algo_id = buf[0];
-	info->version = buf[1];
-	info->target = buf[2] >> 6;
-	info->data_size = buf[3] | ((buf[2] & 0x3F) << 8);
+	fpga_send_command(fd, 0x03);
+	fpga_recv_response(fd, buf2);
+
+	info->algo_id = buf[4];
+	info->version = buf[5];
+	info->target = 0;// buf[2] >> 6;
+	info->data_size =  buf2[7] | (buf2[6] << 8);
+
+	//printf("fpga_get_info: cmd $2: "); printData(buf, 8);
+	//printf("fpga_get_info: cmd $3: "); printData(buf2, 8);
 
 	return 0;
 }
@@ -725,6 +484,8 @@ uint64_t fpga_get_ident(int fd)
 
 	fpga_send_command(fd, 0x07);
 	fpga_recv_response(fd, buf);
+
+	//printData(buf, 8);
 
 	bswap((unsigned char*)buf, 8);
 
@@ -760,141 +521,7 @@ static uint8_t *fpga_find_devices_by_path()
 
 extern int ignore_bad_ident;
 
-
-#define LICENSE_OUT "detected_dna.txt"
-
-//very similar to fpga_find_device()
-void fpga_check_licenses(int algo)
-{
-	uint8_t* buf;
-	uint8_t* p;
-	FILE* fp;
-	int n=0;
-
-	p = buf = fpga_find_devices_by_path();
-
-	fp = fopen(LICENSE_OUT, "wt");
-
-	printf(" ** Please see the readme.txt file about obtaining and using a license! **\n\n");
-
-	printf("Detecting all programmed FPGA's for licensing...\n\n");
-
-	if (fp == 0) {
-		return;
-	}
-
-	while (*p) {
-		uint8_t port = *p++;
-		int fd;
-		fpgainfo_t info;
-		char dna[64];
-		char* dnap, out[128];
-		char* dnap2, out2[128];
-
-
-		fd = fpga_open_port(port);
-
-		if (fd <= 0)
-			continue;
-
-		memset(&info, 0, sizeof(fpgainfo_t));
-		uint64_t id = fpga_get_ident(fd);
-		fpga_get_info(fd, &info);
-		read_fpga_dna(fd, (uint32_t*)dna);
-		fpga_close(fd);
-
-		dnap = make_hex_str(8, dna + 8, (char*)out);
-
-		dnap2 = make_hex_str(16, dna, (char*)out2);
-
-		if (info.data_size == 0 && info.version == 0) {
-			//			printf("no FPGA found.\n");
-			continue;
-		}
-
-		if (info.algo_id == algo) {
-			printf(" + COM%u...", port);
-			printf("found FPGA (%s): %s", fpga_algo_id_to_string(info.algo_id), dnap2);
-			if (id != 0xDeadBeefCafeC0deULL) {
-				printf(" (ident failed: received: %08X%08X).", (uint32_t)(id >> 32), (uint32_t)(id & 0xFFFFFFFF));
-				if (ignore_bad_ident == 0) {
-					printf("..skipping.\n");
-					continue;
-				}
-				printf("\n");
-			}
-			else {
-				printf(" (bitstream is ready)\n");
-			}
-			fprintf(fp, "%s\n", dnap);
-			n++;
-		}
-		else {
-			//printf("found FPGA (%s): %s\n", fpga_algo_id_to_string(info.algo_id), dnap);
-		}
-	}
-
-	printf("Finished detecting FPGA's.  Found %d FPGA's.  Wrote results to " LICENSE_OUT "\n\n", n);
-
-	fclose(fp);
-}
-
-
-int fpga_find_device(int algo)
-{
-	uint8_t *buf;
-	uint8_t *p;
-	int ret = 0;
-	char dna[64];
-	char* dnap, out[128];
-
-	p = buf = fpga_find_devices_by_path();
-
-	while (*p) {
-		uint8_t port = *p++;
-		int fd;
-		fpgainfo_t info;
-
-//		printf("Checking COM%u...", port);
-
-		fd = fpga_open_port(port);
-
-		if (fd <= 0)
-			continue;
-
-		memset(&info, 0, sizeof(fpgainfo_t));
-		uint64_t id = fpga_get_ident(fd);
-		fpga_get_info(fd, &info);
-		read_fpga_dna(fd, (uint32_t*)dna);
-		fpga_close(fd);
-
-		dnap = make_hex_str(8, dna + 8, (char*)out);
-
-		if (info.data_size == 0 && info.version == 0) {
-			//printf("no FPGA found (null data received).\n");
-			continue;
-		}
-		if (id != 0xDeadBeefCafeC0deULL) {
-			//printf("no FPGA found (ident failed: received: %08X%08X).\n", (uint32_t)(id >> 32), (uint32_t)(id & 0xFFFFFFFF));
-			if(ignore_bad_ident == 0)
-				continue;
-		}
-		printf("COM%d: found %s FPGA: %s v%X.%x", port, fpga_target_to_string(info.target), fpga_algo_id_to_string(info.algo_id), info.version >> 4, info.version & 0xF);
-		if (info.algo_id == algo) {
-			if (licman.Check(dnap)) {
-				ret = port;
-				printf(" (license is valid)\n");
-				break;
-			}
-			else
-				printf(" (no license)\n");
-		}
-		else
-			printf("\n");
-	}
-	return ret;
-}
-
+int mhz_to_freq(int fr);
 
 int fpga_init_device(int fd, int sz, int startclk)
 {
@@ -902,16 +529,25 @@ int fpga_init_device(int fd, int sz, int startclk)
 	char out[256];
 	char* dnap;
 
-	read_fpga_dna(fd, (uint32_t*)dna);
-	dnap = make_hex_str(8, dna + 8, (char*)out);
+	//read_fpga_dna(fd, (uint32_t*)dna);
+	//dnap = make_hex_str(8, dna + 8, (char*)out);
 
-	applog(LOG_INFO, " . DNA: %s", dnap);
+	//applog(LOG_INFO, " . DNA: %s", dnap);
 
 	//clear fpga communication
 	fpga_send_start(fd);
 
+
+	clock_ctrl_disable = 1;
+
 	//init clocks
-	//fpga_freq_init(fd, sz, startclk);
+	if(clock_ctrl_disable == 0)
+		fpga_freq_init(fd, sz, startclk);
+	else
+		applog(LOG_INFO, "FPGA clock control is disabled.");
+
+	//manual static frequency
+	//fpga_send_command(fd, 0x80 | (uint8_t)mhz_to_freq(480));
 
 	applog(LOG_INFO, "FPGA is ready.");
 

@@ -73,6 +73,8 @@ typedef struct fpgainfo_s {
 #define ALGOID_PHI1612		0x30
 #define ALGOID_POLYTIMOS	0x31
 #define ALGOID_BSHA3		0x32
+#define ALGOID_NEOSCRYPT	0x33
+#define ALGOID_HONEYCOMB	0x34
 
 //hardware definitions
 #define HW_XILINX	0x0
@@ -103,3 +105,58 @@ char *fpga_target_to_string(int id);
 int fpga_algo_to_algoid(int id);
 
 void fpga_check_licenses(int algo);
+
+
+
+
+
+//fpga2.cpp
+typedef struct fpga_device_s {
+
+	//com port
+	int port;
+
+	//dna
+	char dna[32];
+
+	//bitstream info
+	int fresh;
+	int licvalid;
+	int freq;
+	int algo_id;
+	int version;
+	int hardware;
+	int datasize;
+
+} fpga_device_t;
+
+int fpga2_init();
+void fpga2_kill();
+int fpga2_find_devices(int algo_id);
+uint64_t fpga2_read_ident(int fd);
+bool fpga2_read_dna(int fd, fpga_device_t* device);
+bool fpga2_read_info(int fd, fpga_device_t* device);
+int fpga2_find_device();
+int fpga2_get_device_com_port(int idx);
+char* fpga2_get_device_dna(int idx);
+int fpga2_get_device_by_com_port(int port);
+int fpga2_find_licenses();
+int fpga2_check_license(int i);
+
+//fpga2_helper.cpp
+uint8_t* fpga2_find_com_ports();
+uint8_t* fpga2_find_fpga_ports();
+
+//fpga2_open.cpp
+int fpga2_open(const char* devpath);
+int fpga2_open_by_port(int port);
+int fpga2_open_by_dna(const char* dna);
+void fpga2_close(int fd);
+
+//fpga2_license.cpp
+int fpga2_license_clear_data();
+int fpga2_license_load_file(char* filename);
+int fpga2_license_load_path(char* path);
+int fpga2_license_get(const char* dna, char* hash);
+
+int FindFiles(char* filter, void (*cb)(void*, char*), void* data);

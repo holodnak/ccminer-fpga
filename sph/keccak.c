@@ -39,6 +39,13 @@
 extern "C"{
 #endif
 
+	static void printDataFPGA(void* data, int size)
+	{
+		while (size > 0)
+			printf("%02X", ((unsigned char*)data)[--size]);
+		printf("\n");
+	}
+
 /*
  * Parameters:
  *
@@ -1589,6 +1596,25 @@ static void printData(void* data, int size)
 	printf("\n");
 }
 
+static void checkState(void* data, int size)
+{
+	static unsigned char ss[1600];
+	static int dirty = 0;
+
+	if (dirty == 0) {
+		memcpy(ss, data, size);
+		dirty = 1;
+		return;
+	}
+	if (memcmp(ss, data, size) == 0)
+		printf("data has not changed.\n");
+	else {
+		printf("data has changed!!\n");
+		memcpy(ss, data, size);
+	}
+
+}
+
 static void
 keccak_core(sph_keccak_context* kc, const void *data, size_t len, size_t lim)
 {
@@ -1621,6 +1647,9 @@ keccak_core(sph_keccak_context* kc, const void *data, size_t len, size_t lim)
 		len -= clen;
 		if (ptr == lim) {
 			INPUT_BUF(lim);
+			//printf("input data to keccak:\n");
+			//printDataFPGA(buf, 576 / 8);
+
 			KECCAK_F_1600;
 			ptr = 0;
 		}

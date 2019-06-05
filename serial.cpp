@@ -62,10 +62,10 @@ int serial_open(const char *devpath, unsigned long baud, signed short timeout, b
 		DWORD e = GetLastError();
 		switch (e) {
 		case ERROR_ACCESS_DENIED:
-			applog(LOG_ERR, "Do not have user privileges required to open %s", devpath);
+			//applog(LOG_ERR, "Do not have user privileges required to open %s", devpath);
 			break;
 		case ERROR_SHARING_VIOLATION:
-			applog(LOG_ERR, "%s is already in use by another process", devpath);
+			//applog(LOG_ERR, "%s is already in use by another process", devpath);
 			break;
 		case ERROR_FILE_NOT_FOUND:
 			applog(LOG_ERR, "Device %s not found", devpath);
@@ -119,6 +119,9 @@ int serial_recv(int fd, char *buf, size_t bufsize, size_t *readlen)
 	do {
 		Status = ReadFile(fh, &TempChar, sizeof(TempChar), &NoBytesRead, NULL);
 
+		if (Status == FALSE)
+			break;
+
 		buf[len++] = TempChar;
 
 		if (len == bufsize)
@@ -127,7 +130,8 @@ int serial_recv(int fd, char *buf, size_t bufsize, size_t *readlen)
 	} while (NoBytesRead > 0);
 
 	*readlen = (size_t)len;
-	return(0);
+
+	return((Status == FALSE) ? 1 : 0);
 }
 
 void serial_close(int fd)

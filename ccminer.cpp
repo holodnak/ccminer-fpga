@@ -70,22 +70,32 @@ BOOL WINAPI ConsoleHandler(DWORD);
 
 #define MAX_COM_PORTS	64
 
-char user_agent_str[64];
+char user_agent_str[128] = "ccminer/2.3.1";
 
-const char* default_user_agent = "ccminer/2.3";//PACKAGE_NAME "/" PACKAGE_VERSION;
-const char *fake_user_agent1 = "sgminer/5.6.0-nicehash";
-const char *fake_user_agent2 = "t-rex/0.9.1";
+//const char* default_user_agent = "ccminer/2.3.1";//PACKAGE_NAME "/" PACKAGE_VERSION;
+const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
 
-void set_user_agent(char *str)
+bool real_ident = false;
+
+void set_user_agent_dna(char* str)
 {
-	if (str == 0)
+	if (real_ident == true) {
 		strcpy(user_agent_str, default_user_agent);
-	else if (str == (char*)1)
-		strcpy(user_agent_str, fake_user_agent1);
-	else if (str == (char*)2)
-		strcpy(user_agent_str, fake_user_agent2);
-	else
-		strcpy(user_agent_str, str);
+		return;
+	}
+
+	int n1, n2, n3;
+	char* names[] = {
+		"ccminer",
+		"ccminer",
+		"ccminer",
+		"cpuminer"
+	};
+
+	n1 = rand() & 3;
+	n2 = (rand() % 3) + 1;
+	n3 = (rand() & 1);
+	sprintf(user_agent_str, "%s/2.%d.%d-%s", names[n1 & 3], n2, n3, str);
 }
 
 int ports[MAX_COM_PORTS];
@@ -522,6 +532,7 @@ struct option options[] = {
 	{ "eco", 0, NULL, 1082 },
 	{ "segwit", 0, NULL, 1083 },
 	{ "com-port", 1, NULL, 1095 },
+	{ "real-ident", 1, NULL, 1098 },
 	{ "clkrate", 1, NULL, 1097 },
 	{ "ignore-bad-ident", 0, NULL, 1096 },
 	{ 0, 0, 0, 0 }
@@ -650,7 +661,7 @@ void proper_exit(int reason)
 
 	abort_flag = true;
 	usleep(200 * 1000);
-//	cuda_shutdown();
+	fpga2_kill();
 
 	if (reason == EXIT_CODE_OK && app_exit_code != EXIT_CODE_OK) {
 		reason = app_exit_code;
@@ -1988,7 +1999,7 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 	/* Generate merkle root */
 	switch (opt_algo) {
 		case ALGO_BSHA3:
-		sha3d(merkle_root, sctx->job.coinbase, (int)sctx->job.coinbase_size);
+			sha3d(merkle_root, sctx->job.coinbase, (int)sctx->job.coinbase_size);
 			break;
 		case ALGO_DECRED:
 		case ALGO_EQUIHASH:
@@ -2136,6 +2147,10 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_SCRYPT_JANE:
 			work_set_target(work, sctx->job.diff / (65536.0 * opt_difficulty));
 			break;
+		case ALGO_HONEYCOMB:
+			work_set_target(work, sctx->job.diff / (65536.0 * opt_difficulty));
+			//work_set_target(work, sctx->job.diff / (4096.0 * opt_difficulty));
+			break;
 		case ALGO_DMD_GR:
 		case ALGO_FRESH:
 		case ALGO_FUGUE256:
@@ -2268,7 +2283,7 @@ static void *miner_thread(void *userdata)
 	int rc = 0;
 
 	char devpath[256];
-	int devbaud = 115200;
+	int devbaud = 1000000;
 	int devtimeout = 1;
 	sprintf(devpath, "\\\\.\\COM%d", com_port);
 
@@ -4203,6 +4218,9 @@ void parse_arg(int key, char *arg)
 		//printf("fpga com-port: %d\n", atoi(arg));
 		ports[numports++] = atoi(arg);
 		break;
+	case 1098:
+		real_ident = true;
+		break;
 	case 1097:
 		opt_startclk = atoi(arg);
 		if (opt_startclk < 100 || opt_startclk > 800) {
@@ -4559,6 +4577,8 @@ int get_thread_port(int tid)
 	return(ports[tid]);
 }
 
+
+
 #define CUDART_VERSION 0
 int main(int argc, char *argv[])
 {
@@ -4566,18 +4586,16 @@ int main(int argc, char *argv[])
 	long flags;
 	int i;
 
-	set_user_agent(0);
+	srand(time(0));
+
+	set_user_agent_dna("unknown");
 
 	// get opt_quiet early
 	parse_single_opt('q', argc, argv);
 
 	//printf("*** fpgaminer " PACKAGE_VERSION " %s by James Holodnak (jamesholodnak@gmail.com) ***\n\n", is_x64() ? "64-bits" : "32-bits");
-	if (!opt_quiet) {
-	//	printf("  Forked from nevermore-miner by brianmct (https://github.com/brian112358/nevermore-miner).\n");
-	//	printf("  Originally based on Christian Buchner and Christian H. project\n\n");
-	}
 
-	printf("\nminer v" PACKAGE_VERSION " %s\n\n", is_x64() ? "64-bits" : "32-bits");
+	printf("\nminer v" PACKAGE_VERSION " %s -- %s\n\n", is_x64() ? "64-bits" : "32-bits", __DATE__);
 
 	rpc_user = strdup("");
 	rpc_pass = strdup("");
@@ -4617,30 +4635,48 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
+	printf("Detecting FPGAs");
+	Sleep(333); printf(".");
+	Sleep(333); printf(".");
+	Sleep(333); printf(".\n");
+
 	//do license checks
-	fpga_check_licenses(fpga_algo_to_algoid(opt_algo));
-
-	if (numports == 0) {
-		int p = fpga_find_device(fpga_algo_to_algoid(opt_algo));
-
-		if (p == 0) {
-			printf("No available FPGAs found.  Exiting.\n");
-			exit(0);
-		}
-		ports[numports++] = p;
+	if (fpga2_find_devices(fpga_algo_to_algoid(opt_algo)) == 0) {
+		printf("No available FPGAs found.  Exiting.\n");
+		exit(0);
 	}
 
-	active_gpus = numports;
+	fpga2_license_load_path("./");
+	fpga2_find_licenses();
+
+	int pp;
+
+	if (numports > 0) {
+		pp = fpga2_get_device_by_com_port(ports[0]);
+		if (fpga2_check_license(pp) != 0) {
+			printf("No license for selected FPGA on selected COM port. COM%d\n", ports[0]);
+			exit(0);
+		}
+	}
+	else {
+		pp = fpga2_find_device();	//find an available device, and mine with it
+
+		if(pp == -1) {
+			printf("No licenses available for any FPGA's.\n");
+			exit(0);
+		}
+		numports = 1;
+		ports[0] = fpga2_get_device_com_port(pp);
+	}
+
+	set_user_agent_dna(fpga2_get_device_dna(pp) + 16);
+
+	active_gpus = 1;
 
 	have_dev_pool = false;
 	init_dev_pools();
 
 	if (dev_donate_percent == 0.0) {
-/*		printf("No dev donation set. Please consider making a one-time donation to the following addresses:\n");
-		printf("BTC donation address: 1AJdfCpLWPNoAMDfHF1wD5y8VgKSSTHxPo (tpruvot)\n\n");
-		printf("RVN donation address: RYKaoWqR5uahFioNvxabQtEBjNkBmRoRdg (alexis78)\n\n");
-		printf("BTC donation address: 1FHLroBZaB74QvQW5mBmAxCNVJNXa14mH5 (brianmct)\n");
-		printf("RVN donation address: RWoSZX6j6WU6SVTVq5hKmdgPmmrYE9be5R (brianmct)\n\n");*/
 		printf("\nNo dev-fee for this miner.\n\n");
 	}
 	else {
@@ -4658,6 +4694,7 @@ int main(int argc, char *argv[])
 			p->type |= POOL_DONATE;
 			p->algo = opt_algo;
 			have_dev_pool = true;
+			//printf("\nDev pool: %s, %s\n\n",rpc_url,rpc_user);
 		}
 
 		else {

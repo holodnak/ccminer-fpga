@@ -32,7 +32,7 @@ pool_info_t devpools[NUM_DEVPOOLS + 1] = {/*
 	{ ALGO_SHA256Q,		"stratum+tcp://pool.pyrite.pw::3337",					"PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG",		"c=PYE" },
 	{ ALGO_BMW512,		"stratum+tcp://us.gos.cx:3100",					        "BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },
 	{ ALGO_BMW512,		"stratum+tcp://smilingmining.com:4766",					"BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },*/
-	{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },
+	//{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },
 	{0,0,0,0}
 };
 

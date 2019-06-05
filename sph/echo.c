@@ -856,6 +856,14 @@ echo_small_close(sph_echo_small_context *sc, unsigned ub, unsigned n,
 	echo_small_init(sc, out_size_w32 << 5);
 }
 
+void printDataFPGA(void* data, int size)
+{
+	while (size > 0)
+		printf("%02X", ((unsigned char*)data)[--size]);
+	printf("\n");
+}
+
+
 static void
 echo_big_close(sph_echo_big_context *sc, unsigned ub, unsigned n,
 	void *dst, unsigned out_size_w32)
@@ -903,6 +911,8 @@ echo_big_close(sph_echo_big_context *sc, unsigned ub, unsigned n,
 	}
 	sph_enc16le(buf + (sizeof sc->buf) - 18, out_size_w32 << 5);
 	memcpy(buf + (sizeof sc->buf) - 16, u.tmp, 16);
+	//printf("echo buffer:\n");
+	//printDataFPGA(buf, 128);
 	echo_big_compress(sc);
 #if SPH_ECHO_64
 	for (VV = &sc->u.Vb[0][0], k = 0; k < ((out_size_w32 + 1) >> 1); k ++)

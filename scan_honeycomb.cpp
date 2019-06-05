@@ -27,7 +27,7 @@ void xor64(unsigned char* a, unsigned char* b, unsigned char* c, unsigned char* 
 	}
 }
 
-void honeycomb_hash_new(void* state, void* input)
+void honeycomb_hash_new(void* state, void* input, bool noisey)
 {
 	uint32_t _ALIGN(64) buffer1[16], buffer2[16], buffer3[16], buffer4[16], hash1[16], hash2[16], hash3[16], hash4[16], hash5[16], hash6[16], hash7[16], hash8[16];
 	sph_keccak_context ctx_keccak;
@@ -41,64 +41,25 @@ void honeycomb_hash_new(void* state, void* input)
 	unsigned char bee[64];
 	int len = 80;
 
-	printf("\ninput len = %d bytes, contents:\n\n", len);
-	printData((char*)input, len);
+	if (noisey) printf("\ninput len = %d bytes, contents: ", len);
+	if (noisey) printDataFPGA((char*)input, len);
 
 	///////////////////////////////////////////////////////////
 
-	memset(input, 0, len);
+	//memset(input, 0, len);
 	//memset(input, 0x55, len);
-
-	printf("\nbefore simd512:\n\n");
-	printData(input, len);
-	printDataFPGA(input, len);
-
-	sph_simd512_init(&ctx_simd);
-	sph_simd512(&ctx_simd, input, len);
-	sph_simd512_close(&ctx_simd, (void*)buffer3);
-
-	printf("\nafter simd512:\n\n");
-	printData(buffer3, 64);
-	printDataFPGA(buffer3, 64);
-
-	uint32_t res[] = {
-		//hashing result of all 0's
-		0x7783C699, 0x19B2645C, 0xAA5297D7, 0x3D828397,
-		0x9D3571DE, 0x2ABA17DB, 0x474A9796, 0xC97CC588,
-		0x8CC91145, 0x31E50B51, 0xC610F227, 0xEC6E15F9,
-		0x00A51165, 0x2C5D3E37, 0x1FC11E31, 0x450416FC,
-
-		//hashing result of all $55's
-		0xDF77F2E0, 0x1A762173, 0xA5B5A63F, 0x213A582E,
-		0x1D844E10, 0x7FA378D1, 0x99615276, 0xCB737EA4,
-		0x95E38BBF, 0x9083251B, 0xD97792D8, 0x14BD97B7,
-		0x21DA2203, 0x326A025D, 0x7798C4E5, 0xD2E9CCFC
-	};
-
-	for(int k=0;k<32;k++)
-		res[k] = bswap_32(res[k]);
-
-	if (memcmp(buffer3, res, 64) == 0) {
-		printf("\n !! empty string to hash: success\n\n");
-	}
-	if (memcmp(buffer3, res+16, 64) == 0) {
-		printf("\n !! string of $55 to hash: success\n\n");
-	}
-
-	system("pause");
-	exit(0);
-
-	///////////////////////////////////////////////////////////
 
 
 	HoneyBee2((unsigned char*)input, len, bee);
 
-	printf("\nafter HoneyBee:\n\n");
-	printData(bee, len);
+	if (noisey) printf("after HoneyBee:       ");
+	if (noisey) printDataFPGA(bee, 64);
 
 	sph_keccak512_init(&ctx_keccak);
 	sph_keccak512(&ctx_keccak, input, len);
 	sph_keccak512_close(&ctx_keccak, (void*)buffer1);
+
+	//system("pause");
 
 	sph_shavite512_init(&ctx_shavite);
 	sph_shavite512(&ctx_shavite, input, len);
@@ -112,52 +73,63 @@ void honeycomb_hash_new(void* state, void* input)
 	sph_simd512(&ctx_simd, input, len);
 	sph_simd512_close(&ctx_simd, (void*)buffer3);
 
-	printf("hash1 (keccak):\n\n"); printData(buffer1, 64);
-	printf("hash2 (shavite):\n\n"); printData(buffer2, 64);
-	printf("hash4 (simd):\n\n"); printData(buffer3, 64);
-	printf("hash6 (echo):\n\n"); printData(buffer4, 64);
+	if (noisey){ printf("hash1 (keccak):       "); printDataFPGA(buffer1, 64);}
+	if (noisey){ printf("hash2 (shavite):      "); printDataFPGA(buffer2, 64);}
+	if (noisey){ printf("hash3 (simd):         "); printDataFPGA(buffer3, 64);}
+	if (noisey){ printf("hash4 (echo):         "); printDataFPGA(buffer4, 64);}
 
 	xor64((unsigned char*)bee, (unsigned char*)buffer1, (unsigned char*)buffer2, (unsigned char*)hash2);
 
-	printf("\nbuffer1^buffer2^bee: \n\n");
-	printData(hash2, 64);
+	if (noisey) printf("buffer1^buffer2^bee:  ");
+	if (noisey) printDataFPGA(hash2, 64);
 
 	sph_jh512_init(&ctx_jh);
 	sph_jh512(&ctx_jh, hash2, 64);
 	sph_jh512_close(&ctx_jh, (void*)hash3);
 
-	printf("hash3 (jh):\n\n"); printData(hash3, 64);
+	if (noisey) printf("hash3 (jh):           "); 
+	if (noisey) printDataFPGA(hash3, 64);
 
 	xor64((unsigned char*)bee, (unsigned char*)buffer3, (unsigned char*)hash3, (unsigned char*)hash5);
 
-	printf("\nbuffer3^buffer4^bee: \n\n");
-	printData(hash5, 64);
+	if (noisey) printf("buffer3^buffer4^bee:  ");
+	if (noisey) printDataFPGA(hash5, 64);
 
 	sph_shabal512_init(&ctx_shabal);
 	sph_shabal512(&ctx_shabal, hash5, 64);
 	sph_shabal512_close(&ctx_shabal, (void*)hash6);
 
-	printf("hash5 (shabal):\n\n"); printData(hash6, 64);
+	if (noisey) { printf("hash5 (shabal):       "); printDataFPGA(hash6, 64); }
 
 	xor64((unsigned char*)bee, (unsigned char*)buffer4, (unsigned char*)hash6, (unsigned char*)hash8);
 
-	printf("\noutput: \n\n");
-	printData(hash8, 64);
+	if (noisey) printf("output:               ");
+	if (noisey) printDataFPGA(hash8, 64);
 
 	memcpy(state, hash8, 32);
 }
 
 extern "C" void honeycomb_hash(const char* input, int len, char* output);
 
-int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+int scanhash_honeycomb_cpu(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	uint32_t _ALIGN(128) hash32[8], hash32_new[8];
 	uint32_t _ALIGN(128) endiandata[20];
 	uint32_t* pdata = work->data;
 	uint32_t* ptarget = work->target;
 
-	ptarget[7] = 0x0000fff;
+	ptarget[7] = 0x0000ffff;
 	ptarget[6] = 0xffffffff;
+
+	uint32_t aaa[20] = {
+		0x00000020, 0xE0CFE519, 0x7DC0CC6E, 0x2C74451B,
+		0x3481B15F, 0xBC69F269, 0xD7669944, 0xD9B30600,
+		0x00000000, 0x007E36B9, 0xACD262AD, 0xB2F7A041,
+		0xAECB8E97, 0x91C720AB, 0xBB2618CD, 0x94182A20,
+		0xA90A355B, 0xFE04F35C, 0x99BD111B, 0x00016D57
+	};
+
+	memcpy(work->data, aaa, 80);
 
 	uint32_t n = pdata[19] - 1;
 	const uint32_t first_nonce = pdata[19];
@@ -170,23 +142,30 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 
 		pdata[19] = ++n;
 		be32enc(&endiandata[19], n);
-		honeycomb_hash((char*)endiandata, 80, (char*)hash32);
 
-		honeycomb_hash_new(hash32_new, endiandata);
+		//memset(endiandata, 0, 80);
+		//memset(endiandata, 0x55, 80);
 
-		printf("found hash:\n\n");
-		printData(hash32, 32);
+		//honeycomb_hash((char*)endiandata, 80, (char*)hash32);
 
-		printf("found hash (new):\n\n");
-		printData(hash32_new, 32);
+		honeycomb_hash_new(hash32, endiandata, 0);
 
-		system("pause");
+		//printf("found hash:\n\n");
+		//printData(hash32, 32);
+
+		//printf("found hash (new):\n\n");
+		//printData(hash32_new, 32);
+
+		//if (memcmp(hash32, hash32_new, 32) == 0)
+		//	printf("\n  !! hashes match!!  success!!\n\n");
+
+		//printf("\n\nfound ptarget:\n\n");
+		//printData(&ptarget[6], 8);
+		//system("pause");
 
 		if (hash32[7] <= Htarg && fulltest(hash32, ptarget))
 		{
-
-			printf("\n\nfound ptarget:\n\n");
-			printData(&ptarget[6], 8);
+			honeycomb_hash_new(hash32, endiandata, 1);
 
 			printf("found hash:\n\n");
 			printData(hash32, 32);
@@ -228,45 +207,61 @@ int GetRej();
 
 extern uint64_t global_hashrate;
 
-int scanhash_honeycomb_f(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	unsigned char wbuf[84];
 	uint32_t* pdata = work->data;
 	unsigned char buf[8];
 	uint32_t endiandata[32];
 	uint32_t hash_test[64];
-	uint32_t target1, my_target[8];
+	uint32_t target0, target1, my_target[8];
 
-	if (pdata[19] < 200)
-		pdata[19] = 200;
+	//if (pdata[19] < 200)
+	//	pdata[19] = 200;
 
 	//	pdata[19] += 250;
 
 	for (int k = 0; k < 20; k++)
 		be32enc(&endiandata[k], pdata[k]);
 
-	for (int i = 0; i < 8; i++)
-		my_target[i] = work->target[i];
+	double my_diff = work->targetdiff * 65536.0f;
 
-	if (smaller_diff)
-		my_target[6] <<= 1;
+	if (my_diff < 2048.0f)		my_diff = 2048.0f;
+	//if (my_diff < 1024.0f)		my_diff = 1024.0f;
+
+	//if (my_diff > 16384.0f)		my_diff = 16384.0f;
+	if (my_diff > 8192.0f)	my_diff = 8192.0f;
+	//if (my_diff > 2048.0f)	my_diff = 2048.0f;
+
+	//seems to be the best error rate
+	//my_diff = 2048.0f;
+
+	//printf("scanhash_honeycomb: my_diff is %.3f\n", my_diff);
+
+	diff_to_target(my_target, my_diff / 65536.0f);
+
+	//printf("my_target: "); printData(&my_target[6], 8);
+	//printf("w->target: "); printData(&work->target[6], 8);
+
+	//system("pause");
+
+	//if (smaller_diff) my_target[6] <<= 1;
+	//if (smaller_diff) my_target[6] <<= 4;
+	//my_target[6] = 0xFFFFFFFF;
+
+	//memcpy(work->target, my_target, 8 * 4);
 
 	target1 = my_target[6];
+	target0 = my_target[7];
 
 	//copy data
 	memcpy(wbuf, endiandata, 80);
 
 	//copy target
-/*
-	wbuf[80] = ((unsigned char*)work->target)[0x1F - 4];
-	wbuf[81] = ((unsigned char*)work->target)[0x1E - 4];
-	wbuf[82] = ((unsigned char*)work->target)[0x1D - 4];
-	wbuf[83] = ((unsigned char*)work->target)[0x1C - 4];
-	*/
-	wbuf[80] = ((unsigned char*)& target1)[3];
-	wbuf[81] = ((unsigned char*)& target1)[2];
-	wbuf[82] = ((unsigned char*)& target1)[1];
-	wbuf[83] = ((unsigned char*)& target1)[0];
+	wbuf[80] = ((unsigned char*)& target0)[3];
+	wbuf[81] = ((unsigned char*)& target0)[2];
+	wbuf[82] = ((unsigned char*)& target0)[1];
+	wbuf[83] = ((unsigned char*)& target0)[0];
 
 
 #define SERIAL_READ_SIZE 8
@@ -309,8 +304,9 @@ int scanhash_honeycomb_f(int thr_id, struct work* work, uint32_t max_nonce, uint
 		int n = fpga_freq_check_keys(thr_info[thr_id].fd);
 
 		if (n > 0) {
-			//printf("frequency changed, resending work.\n");
-			Sleep(50);
+			printf("Frequency changed, resending work.\n");
+			Sleep(100);
+			fpga_send_start(thr_info[thr_id].fd);
 			fpga_send_data(thr_info[thr_id].fd, wbuf, 84);
 		}
 		else if (n == -1) {
@@ -352,13 +348,19 @@ int scanhash_honeycomb_f(int thr_id, struct work* work, uint32_t max_nonce, uint
 
 		double hr = ((double)global_hashrate + thr_hashrates[thr_id]) / 1000000.0f / 2.0f;
 
+		char fstr[64];
+
+		memset(fstr, 0, 64);
+		if(cur_freq > 0)
+			sprintf(fstr, "[%dMHz] ", cur_freq);
+
 		//		applog(LOG_INFO, "miner[%d] - VccInt: %0.2fv, Temp: %.1fC", thr_id, vint, temp);
 		if (is_acc || is_rej) {
-			applog(LOG_INFO, "[%dMHz] VInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_GR2 " Share Found." CL_N "", (cur_freq), vint, temp, error_pct, hr);
+			applog(LOG_INFO, "%sVInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_GR2 " Share Found." CL_N "", fstr, vint, temp, error_pct, hr);
 
 		}
 		else
-			applog(LOG_INFO, "[%dMHz] VInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_WHT " Acc/Rej: %d/%d  Sol: %d  Err: %d", (cur_freq), vint, temp, error_pct, hr, GetAcc(), GetAcc() + GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			applog(LOG_INFO, "%sVInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_WHT " Acc/Rej: %d/%d  Sol: %d  Err: %d", fstr, vint, temp, error_pct, hr, GetAcc(), GetAcc() + GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
 		is_acc = 0;
 		is_rej = 0;
 
@@ -372,7 +374,7 @@ int scanhash_honeycomb_f(int thr_id, struct work* work, uint32_t max_nonce, uint
 
 		if (nonce == 0xFFFFFFFF) {
 			pdata[19] = nonce;// +0x10000;
-							  //		   applog(LOG_INFO, "No Nonce Found - %08X (first_nonce = %08X)", nonce, first_nonce);
+			//applog(LOG_INFO, "No Nonce Found - %08X (first_nonce = %08X)", nonce, first_nonce);
 			return 0;
 		}
 
@@ -388,7 +390,8 @@ int scanhash_honeycomb_f(int thr_id, struct work* work, uint32_t max_nonce, uint
 
 		for (int l = 0; l < 20; l++)
 			be32enc(&endiandata[l], pdata[l]);
-		honeycomb_hash_new(hash_test, endiandata);
+		//bsha3_hash(hash_test, endiandata);
+		honeycomb_hash_new(hash_test, endiandata, 0);
 		//printData32(hash_test, 32);
 
 		//check for bad nonce
@@ -415,7 +418,7 @@ int scanhash_honeycomb_f(int thr_id, struct work* work, uint32_t max_nonce, uint
 	//pdata[19] = pdata[19] + 1;
 	*hashes_done = pdata[19] - first_nonce;
 
-	//	applog(LOG_INFO, "No Nonce Found - %08X", pdata[19]);
+	//applog(LOG_INFO, "No Nonce Found - %08X", pdata[19]);
 
 	return 0;
 
