@@ -209,7 +209,7 @@ void reverse(unsigned char *b, int len)
 	static unsigned char bt[1024];
 	int i, j;
 
-	if (len > 128) {
+	if (len > 256) {
 		system("pause");
 		exit(0);
 	}
@@ -405,14 +405,14 @@ int fpga_send_start(int fd)
 	uint8_t cmd00 = 0x00;
 	uint8_t cmd55 = 0x55;
 
-	for (i = 0; i < 1024; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset
+	for (i = 0; i < 2048; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset
 //	for (i = 0; i < 672; i++)	ret += fpga_write(fd, &cmd00, 1);	//send null data to hash w/high difficulty
 //	for (i = 0; i < 1024; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset again
 
 	size_t bytesread = 0;
 	char buf[32768];
 
-	fpga_read(fd, buf, 32768, &bytesread);
+	fpga_read(fd, buf, 256, &bytesread);
 
 	return ret;
 }
@@ -520,6 +520,7 @@ static uint8_t *fpga_find_devices_by_path()
 }
 
 extern int ignore_bad_ident;
+extern int start_clock;
 
 int mhz_to_freq(int fr);
 
@@ -537,17 +538,19 @@ int fpga_init_device(int fd, int sz, int startclk)
 	//clear fpga communication
 	fpga_send_start(fd);
 
-
-	clock_ctrl_disable = 1;
+	clock_ctrl_disable = DISABLE_CLOCK_CONTROL;
 
 	//init clocks
 	if(clock_ctrl_disable == 0)
 		fpga_freq_init(fd, sz, startclk);
-	else
-		applog(LOG_INFO, "FPGA clock control is disabled.");
-
-	//manual static frequency
-	//fpga_send_command(fd, 0x80 | (uint8_t)mhz_to_freq(480));
+	else {
+		if (start_clock > 0) {
+			applog(LOG_INFO, "FPGA clock control is disabled, applying one-time clock change to %dMHz.", start_clock);
+			fpga_send_command(fd, 0x80 | (uint8_t)mhz_to_freq(start_clock));
+		}
+		else
+			applog(LOG_INFO, "FPGA clock control is disabled.");
+	}
 
 	applog(LOG_INFO, "FPGA is ready.");
 

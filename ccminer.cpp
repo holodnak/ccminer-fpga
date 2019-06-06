@@ -76,6 +76,10 @@ char user_agent_str[128] = "ccminer/2.3.1";
 const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
 
 bool real_ident = false;
+bool more_difficult = false;
+int opt_algo_version = 1;
+
+int start_clock = -1;
 
 void set_user_agent_dna(char* str)
 {
@@ -532,7 +536,9 @@ struct option options[] = {
 	{ "eco", 0, NULL, 1082 },
 	{ "segwit", 0, NULL, 1083 },
 	{ "com-port", 1, NULL, 1095 },
-	{ "real-ident", 1, NULL, 1098 },
+	{ "real-ident", 0, NULL, 1098 },
+	{ "start-clock", 1, NULL, 1099 },
+	{ "more-difficult", 0, NULL, 1700 },
 	{ "clkrate", 1, NULL, 1097 },
 	{ "ignore-bad-ident", 0, NULL, 1096 },
 	{ 0, 0, 0, 0 }
@@ -2869,7 +2875,10 @@ static void *miner_thread(void *userdata)
 			break;
 
 		case ALGO_HONEYCOMB:
-			rc = scanhash_honeycomb(thr_id, &work, max_nonce, &hdone64);
+			if(opt_algo_version == 2)
+				rc = scanhash_honeycomb_v2(thr_id, &work, max_nonce, &hdone64);
+			else
+				rc = scanhash_honeycomb(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 		case ALGO_BSHA3:
@@ -4221,6 +4230,12 @@ void parse_arg(int key, char *arg)
 	case 1098:
 		real_ident = true;
 		break;
+	case 1099:
+		start_clock = atoi(arg);
+		break;
+	case 1700:
+		more_difficult = true;
+		break;
 	case 1097:
 		opt_startclk = atoi(arg);
 		if (opt_startclk < 100 || opt_startclk > 800) {
@@ -4577,7 +4592,9 @@ int get_thread_port(int tid)
 	return(ports[tid]);
 }
 
+#include "commit_hash.h"
 
+#define FULL_VERSION PACKAGE_VERSION "-" COMMIT_HASH
 
 #define CUDART_VERSION 0
 int main(int argc, char *argv[])
@@ -4595,7 +4612,7 @@ int main(int argc, char *argv[])
 
 	//printf("*** fpgaminer " PACKAGE_VERSION " %s by James Holodnak (jamesholodnak@gmail.com) ***\n\n", is_x64() ? "64-bits" : "32-bits");
 
-	printf("\nminer v" PACKAGE_VERSION " %s -- %s\n\n", is_x64() ? "64-bits" : "32-bits", __DATE__);
+	printf("\nminer v" FULL_VERSION " %s -- %s\n\n", is_x64() ? "64-bits" : "32-bits", __DATE__);
 
 	rpc_user = strdup("");
 	rpc_pass = strdup("");
@@ -4635,6 +4652,11 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
+	if (numports == 1 && ports[0] == 666) {
+		ports[0] = 3;
+		goto skipchecks;
+	}
+
 	printf("Detecting FPGAs");
 	Sleep(333); printf(".");
 	Sleep(333); printf(".");
@@ -4668,6 +4690,13 @@ int main(int argc, char *argv[])
 		numports = 1;
 		ports[0] = fpga2_get_device_com_port(pp);
 	}
+
+	if (opt_algo == ALGO_HONEYCOMB && fpga2_get_device_version(pp) == 2) {
+		printf("FPGA has Honeycomb v2 bitstream.\n");
+		opt_algo_version = 2;
+	}
+
+skipchecks:
 
 	set_user_agent_dna(fpga2_get_device_dna(pp) + 16);
 

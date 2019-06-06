@@ -129,11 +129,14 @@ int fpga2_find_devices(int algo_id)
 		fpga2_read_info(fd, &device);
 		fpga2_read_dna(fd, &device);
 
+		//add delay
+		Sleep(50);
+
 		//close device
 		fpga2_close(fd);
 
 		//add delay
-		Sleep(100);
+		Sleep(50);
 
 		//add device to list if the algo id matches.
 		if (device.algo_id == algo_id) {
@@ -227,11 +230,14 @@ int fpga2_check_license(int i)
 		//read device info
 		fpga2_read_info(fd, &devices[i]);
 
+		//add delay
+		Sleep(50);
+
 		//close handle
 		fpga2_close(fd);
 
 		//add delay
-		Sleep(100);
+		Sleep(50);
 
 		//check if FPGA rejected the license
 		if (devices[i].licvalid == 0 && fail < 3) {
@@ -288,6 +294,14 @@ char* fpga2_get_device_dna(int idx)
 		return devices[idx].dna;
 
 	return def;
+}
+
+int fpga2_get_device_version(int idx)
+{
+	if (idx >= 0 && idx < num_devices)
+		return devices[idx].version;
+
+	return -1;
 }
 
 int fpga2_get_device_by_com_port(int port)

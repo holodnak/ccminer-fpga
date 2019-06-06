@@ -98,16 +98,10 @@ int fpga_send_command(int fd, uint8_t cmd);
 int fpga_recv_response(int fd, uint8_t *buf);
 
 int fpga_init_device(int fd, int sz, int startclk);
-int fpga_find_device(int algo);
 
 char *fpga_algo_id_to_string(int id);
 char *fpga_target_to_string(int id);
 int fpga_algo_to_algoid(int id);
-
-void fpga_check_licenses(int algo);
-
-
-
 
 
 //fpga2.cpp
@@ -139,6 +133,7 @@ bool fpga2_read_info(int fd, fpga_device_t* device);
 int fpga2_find_device();
 int fpga2_get_device_com_port(int idx);
 char* fpga2_get_device_dna(int idx);
+int fpga2_get_device_version(int idx);
 int fpga2_get_device_by_com_port(int port);
 int fpga2_find_licenses();
 int fpga2_check_license(int i);

@@ -253,6 +253,9 @@
     <PostBuildEvent>
       <Command>copy $(TargetPath) y:\ccminer-dev2.exe</Command>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>"c:\Program Files\Git\git-bash.exe" $(ProjectDir)make_version.sh</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb.c" />

@@ -9,4 +9,5 @@ int scanhash_bmw512(int thr_id, struct work* work, uint32_t max_nonce, uint64_t*
 int scanhash_phi1612(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
 int scanhash_neoscrypt(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
 int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
+int scanhash_honeycomb_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
 int scanhash_bsha3(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
