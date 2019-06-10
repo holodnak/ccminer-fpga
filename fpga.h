@@ -50,8 +50,11 @@ int fpga_freq_increase(int fd);
 uint8_t fpga_get_freq(int fd);
 int fpga_set_freq(int fd, int fr);
 int fpga_freq_decrease(int fd);
-int fpga_freq_init(int fd, int sz, int startclk);
+int fpga_freq_deinit(int fd, int sz);
 int fpga_freq_check_keys(int fd);
+
+int fpga_freq_init(int fd, int startclk);
+int fpga_freq_init_fast(int fd, int startclk);
 
 typedef struct fpgainfo_s {
 	uint8_t algo_id;
@@ -103,6 +106,9 @@ char *fpga_algo_id_to_string(int id);
 char *fpga_target_to_string(int id);
 int fpga_algo_to_algoid(int id);
 
+void fpga_core_enable(int fd);
+void fpga_core_disable(int fd);
+
 
 //fpga2.cpp
 typedef struct fpga_device_s {
@@ -132,6 +138,7 @@ bool fpga2_read_dna(int fd, fpga_device_t* device);
 bool fpga2_read_info(int fd, fpga_device_t* device);
 int fpga2_find_device();
 int fpga2_get_device_com_port(int idx);
+int fpga2_get_device_data_size(int idx);
 char* fpga2_get_device_dna(int idx);
 int fpga2_get_device_version(int idx);
 int fpga2_get_device_by_com_port(int port);

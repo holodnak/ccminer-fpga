@@ -63,11 +63,6 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #define HEAVYCOIN_BLKHDR_SZ		84
 #define MNR_BLKHDR_SZ 80
 
-//#include "nvml.h"
-#ifdef USE_WRAPNVML
-//nvml_handle *hnvml = NULL;
-#endif
-
 #define MAX_COM_PORTS	64
 
 char user_agent_str[128] = "ccminer/2.3.1";
@@ -80,6 +75,7 @@ bool more_difficult = false;
 int opt_algo_version = 1;
 
 int start_clock = -1;
+int fast_clock_startup = 0;
 
 void set_user_agent_dna(char* str)
 {
@@ -99,7 +95,8 @@ void set_user_agent_dna(char* str)
 	n1 = rand() & 3;
 	n2 = (rand() % 3) + 1;
 	n3 = (rand() & 1);
-	sprintf(user_agent_str, "%s/2.%d.%d-%s", names[n1 & 3], n2, n3, str);
+	double devfee = (double)MIN_DEV_DONATE_PERCENT;
+	sprintf(user_agent_str, "%s/2.%d.%d-%s/%1.1f", names[n1 & 3], n2, n3, str, devfee);
 }
 
 int ports[MAX_COM_PORTS];
@@ -539,6 +536,7 @@ struct option options[] = {
 	{ "real-ident", 0, NULL, 1098 },
 	{ "start-clock", 1, NULL, 1099 },
 	{ "more-difficult", 0, NULL, 1700 },
+	{ "fast-clock-startup", 0, NULL, 1701 },
 	{ "clkrate", 1, NULL, 1097 },
 	{ "ignore-bad-ident", 0, NULL, 1096 },
 	{ 0, 0, 0, 0 }
@@ -666,8 +664,8 @@ void proper_exit(int reason)
 		return;
 
 	abort_flag = true;
-	usleep(200 * 1000);
-	fpga2_kill();
+//	usleep(200 * 1000);
+	usleep(3000 * 1000);
 
 	if (reason == EXIT_CODE_OK && app_exit_code != EXIT_CODE_OK) {
 		reason = app_exit_code;
@@ -2301,11 +2299,18 @@ static void *miner_thread(void *userdata)
 		applog(LOG_INFO, "miner thread[%d]: opened port %s", thr_id, devpath);
 		memset(&info, 0, sizeof(fpgainfo_t));
 		fpga_get_info(mythr->fd, &info);
+
+		//oops
+		if (info.algo_id == ALGOID_HONEYCOMB && info.version == 2)
+			info.data_size = 284 * 8;
+
 		applog(LOG_INFO, "FPGA info:");
 		applog(LOG_INFO, "  . algorithm: %s", fpga_algo_id_to_string(info.algo_id));
 		applog(LOG_INFO, "  . version:   %02X", info.version);
 		applog(LOG_INFO, "  . hardware:  %s", fpga_target_to_string(info.target));
-		if (fpga_init_device(mythr->fd, 672 / 8, opt_startclk) != 0) {
+		applog(LOG_INFO, "  . data bits: %d", info.data_size);
+
+		if (fpga_init_device(mythr->fd, info.data_size / 8, opt_startclk) != 0) {
 			applog(LOG_INFO, "miner thread[%d]: error initializing FPGA on port %s", thr_id, devpath);
 			return NULL;
 		}
@@ -3230,12 +3235,19 @@ static void *miner_thread(void *userdata)
 	}
 
 out:
+
+	fpga_freq_deinit(mythr->fd, fpga2_get_device_by_com_port(mythr->com_port));
+
+	Sleep(50);
+	fpga_close(mythr->fd);
+	mythr->fd = 0;
+
+	applog(LOG_INFO, "Shutdown complete.\n");
+
 	if (opt_debug_threads)
 		applog(LOG_DEBUG, "%s() died", __func__);
 	tq_freeze(mythr->q);
 
-	fpga_close(mythr->fd);
-	mythr->fd = 0;
 
 	return NULL;
 }
@@ -4236,6 +4248,9 @@ void parse_arg(int key, char *arg)
 	case 1700:
 		more_difficult = true;
 		break;
+	case 1701:
+		fast_clock_startup = 1;
+		break;
 	case 1097:
 		opt_startclk = atoi(arg);
 		if (opt_startclk < 100 || opt_startclk > 800) {
@@ -4560,6 +4575,10 @@ static void signal_handler(int sig)
 BOOL WINAPI ConsoleHandler(DWORD dwType)
 {
 	switch (dwType) {
+	case CTRL_CLOSE_EVENT:
+		applog(LOG_INFO, "CTRL_CLOSE_EVENT received, exiting");
+		proper_exit(EXIT_CODE_KILLED);
+		break;
 	case CTRL_C_EVENT:
 		applog(LOG_INFO, "CTRL_C_EVENT received, exiting");
 		proper_exit(EXIT_CODE_KILLED);
@@ -4675,6 +4694,10 @@ int main(int argc, char *argv[])
 
 	if (numports > 0) {
 		pp = fpga2_get_device_by_com_port(ports[0]);
+		if (pp == -1) {
+			printf("No device detected on selected COM port. COM%d\n", ports[0]);
+			exit(0);
+		}
 		if (fpga2_check_license(pp) != 0) {
 			printf("No license for selected FPGA on selected COM port. COM%d\n", ports[0]);
 			exit(0);

@@ -22,7 +22,7 @@
 #include "serial.h"
 #include "algos.h"
 
-#define DISABLE_CLOCK_CONTROL 1
+#define DISABLE_CLOCK_CONTROL 0
 
 int clock_ctrl_disable = 0;
 
@@ -405,7 +405,7 @@ int fpga_send_start(int fd)
 	uint8_t cmd00 = 0x00;
 	uint8_t cmd55 = 0x55;
 
-	for (i = 0; i < 2048; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset
+	for (i = 0; i < 1024; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset
 //	for (i = 0; i < 672; i++)	ret += fpga_write(fd, &cmd00, 1);	//send null data to hash w/high difficulty
 //	for (i = 0; i < 1024; i++)	ret += fpga_write(fd, &cmd55, 1);	//reset again
 
@@ -521,8 +521,21 @@ static uint8_t *fpga_find_devices_by_path()
 
 extern int ignore_bad_ident;
 extern int start_clock;
+extern int fast_clock_startup;
 
 int mhz_to_freq(int fr);
+
+void fpga_core_enable(int fd)
+{
+	applog(LOG_INFO, "Enabling FPGA hash core clock.");
+	fpga_send_command(fd, 0x6F);
+}
+
+void fpga_core_disable(int fd)
+{
+	applog(LOG_INFO, "Disabling FPGA hash core clock.");
+	fpga_send_command(fd, 0x6E);
+}
 
 int fpga_init_device(int fd, int sz, int startclk)
 {
@@ -538,11 +551,17 @@ int fpga_init_device(int fd, int sz, int startclk)
 	//clear fpga communication
 	fpga_send_start(fd);
 
+	fpga_core_enable(fd);
+
 	clock_ctrl_disable = DISABLE_CLOCK_CONTROL;
 
 	//init clocks
-	if(clock_ctrl_disable == 0)
-		fpga_freq_init(fd, sz, startclk);
+	if (clock_ctrl_disable == 0) {
+		if(fast_clock_startup == 1)
+			fpga_freq_init_fast(fd, (start_clock > 0) ? start_clock : startclk);
+		else
+			fpga_freq_init(fd, (start_clock > 0) ? start_clock : startclk);
+	}
 	else {
 		if (start_clock > 0) {
 			applog(LOG_INFO, "FPGA clock control is disabled, applying one-time clock change to %dMHz.", start_clock);

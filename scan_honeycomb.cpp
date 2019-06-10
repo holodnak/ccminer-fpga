@@ -308,7 +308,7 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 			printf("Frequency changed, resending work.\n");
 			Sleep(100);
 			fpga_send_start(thr_info[thr_id].fd);
-			fpga_send_data(thr_info[thr_id].fd, wbuf, 84);
+			fpga_send_data(thr_info[thr_id].fd, wbuf, 284);
 		}
 		else if (n == -1) {
 			thr_info[thr_id].hw_err = 0;
@@ -357,11 +357,10 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 
 		//		applog(LOG_INFO, "miner[%d] - VccInt: %0.2fv, Temp: %.1fC", thr_id, vint, temp);
 		if (is_acc || is_rej) {
-			applog(LOG_INFO, "%sVInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_GR2 " Share Found." CL_N "", fstr, vint, temp, error_pct, hr);
-
+			applog(LOG_INFO, "%sV: %0.2fv, T: %.1fC, Err: %.2f%% " CL_CYN "%.1f MH/s" CL_GR2 " Share Found." CL_N "", fstr, vint, temp, error_pct, hr);
 		}
 		else
-			applog(LOG_INFO, "%sVInt: %0.2fv, Temp: %.1fC, Errors: %.2f%% " CL_CYN "%.1f MH/s" CL_WHT " Acc/Rej: %d/%d  Sol: %d  Err: %d", fstr, vint, temp, error_pct, hr, GetAcc(), GetAcc() + GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			applog(LOG_INFO, "%sV: %0.2fv, T: %.1fC, Err: %.2f%% " CL_CYN "%.1f MH/s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d", fstr, vint, temp, error_pct, hr, GetAcc(), GetAcc() + GetRej(), thr_info[thr_id].solutions - thr_info[thr_id].hw_err, thr_info[thr_id].hw_err);
 		is_acc = 0;
 		is_rej = 0;
 

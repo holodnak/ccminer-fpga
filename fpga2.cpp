@@ -75,8 +75,9 @@ void fpga2_kill()
 {
 	if (cur_device) {
 		printf("Shutting down FPGA...\n");
-		Sleep(500);
+		//Sleep(500);
 		printf("Finished shutting down FPGA.\n");
+
 	}
 }
 
@@ -117,13 +118,18 @@ int fpga2_find_devices(int algo_id)
 
 		if (fd <= 0) {
 			//printf("Error opening COM %d.\n", port);
+			Sleep(50);
 			continue;
 		}
 		memset(&device, 0, sizeof(fpga_device_t));
 		device.port = port;
 
-		if (fpga2_read_ident(fd) != 0xDeadBeefCafeC0deULL)
+		if (fpga2_read_ident(fd) != 0xDeadBeefCafeC0deULL) {
+			Sleep(50);
+			fpga2_close(fd);
+			Sleep(50);
 			continue;
+		}
 
 		//read device info/dna
 		fpga2_read_info(fd, &device);
@@ -161,14 +167,16 @@ static void send_char(int fd, unsigned char id) {
 
 void fpga2_unlock_device(int fd, char* license)
 {
-	char* lic = new char[256];
+	static char lic[256];
+	static unsigned char buf[1024];
+	unsigned char *bufp;
 	char* p = lic;
-	unsigned char buf[1024], * bufp = buf;
 	int chars = 0;
 	int nn = 0;
 
 	memset(buf, 0, 1024);
 	memset(lic, 0, 256);
+	bufp = buf;
 	strcpy(lic, license);
 	_strrev(lic);
 	while (*p != 0) {
@@ -199,7 +207,6 @@ void fpga2_unlock_device(int fd, char* license)
 	}
 
 	printf(", done.\n");
-	delete[] lic;
 }
 
 int fpga2_check_license(int i)
@@ -282,6 +289,14 @@ int fpga2_get_device_com_port(int idx)
 {
 	if (idx >= 0 && idx < num_devices)
 		return devices[idx].port;
+
+	return -1;
+}
+
+int fpga2_get_device_data_size(int idx)
+{
+	if (idx >= 0 && idx < num_devices)
+		return devices[idx].datasize;
 
 	return -1;
 }
