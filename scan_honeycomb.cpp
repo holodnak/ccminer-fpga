@@ -206,7 +206,10 @@ int GetAcc();
 int GetRej();
 
 extern uint64_t global_hashrate;
+extern bool less_difficult;
 extern bool more_difficult;
+
+#define NEW_DIFF_OFFSETS 1
 
 int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
@@ -225,6 +228,23 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 
 	double my_diff = work->targetdiff * 65536.0f;
 
+#ifdef NEW_DIFF_OFFSETS
+	//starting initial values
+	double start_min = 4096.0f;
+	double start_max = 16384.0f;
+
+	if (more_difficult) {
+		start_min *= 4.0f;
+		start_max *= 4.0f;
+		info_timeout = 30;
+	}
+	if (less_difficult) {
+		start_min /= 4.0f;
+		start_max /= 4.0f;
+	}
+	if (my_diff < start_min)	my_diff = start_min;
+	if (my_diff > start_max)	my_diff = start_max;
+#else
 	if (more_difficult == false) {
 		if (my_diff < 4096.0f)		my_diff = 4096.0f;
 		//if (my_diff < 2048.0f)		my_diff = 2048.0f;
@@ -240,6 +260,7 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 		if (my_diff > 65536.0f)		my_diff = 65536.0f;
 		info_timeout = 30;
 	}
+#endif
 
 	diff_to_target(my_target, my_diff / 65536.0f);
 
@@ -266,12 +287,10 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 	wbuf[82] = ((unsigned char*)& target0)[1];
 	wbuf[83] = ((unsigned char*)& target0)[0];
 
-
 #define SERIAL_READ_SIZE 8
 
 	struct timeval tv_start, elapsed, tv_end;
 	int ret;
-
 
 	//	printf("data out:\n");
 	//	printData(wbuf, 84);
@@ -370,7 +389,7 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 
 		nonce = swab32(nonce);
 
-		*hashes_done = nonce - first_nonce;
+		*hashes_done = (uint64_t)(nonce - first_nonce) & 0xFFFFFFFFULL;
 
 		if (nonce == 0xFFFFFFFF) {
 			pdata[19] = nonce;// +0x10000;
@@ -416,7 +435,7 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 
 	pdata[19] = 0xFFFFFFFF;
 	//pdata[19] = pdata[19] + 1;
-	*hashes_done = pdata[19] - first_nonce;
+	*hashes_done = (uint64_t)(pdata[19] - first_nonce) & 0xFFFFFFFFULL;
 
 	//applog(LOG_INFO, "No Nonce Found - %08X", pdata[19]);
 

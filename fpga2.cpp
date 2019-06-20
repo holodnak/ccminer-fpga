@@ -88,7 +88,8 @@ int fpga2_find_licenses()
 
 	FILE* fo = fopen("detected_dna.txt", "wt");
 
-	fprintf(fo, "; this is a list of the detected FPGA devices without a corresponding license key.\n\n");
+	fprintf(fo, "; this is a list of the detected FPGA devices without a corresponding license key.\n;\n");
+	fprintf(fo, "; if you have license keys for other bitstreams, nothing will be output here.\n;\n");
 	for (i = 0; i < num_devices; i++) {
 		if (fpga2_license_get(devices[i].dna, license_hash) == 0) {
 			printf("No license available for DNA %s\n", devices[i].dna);
@@ -103,12 +104,26 @@ int fpga2_find_licenses()
 
 int fpga2_find_devices(int algo_id)
 {
-	uint8_t* comports = fpga2_find_com_ports();
+	uint8_t buf[512];
+	uint8_t* comports = fpga2_find_com_ports(buf);
 
 	if (num_devices > 0 || cur_device != -1) {
 		printf("fpga2_find_devices:  this should only be called once!!  error!!");
 		num_devices = 0;
 	}
+
+	Sleep(1000);
+
+	uint8_t* pp = comports;
+
+	printf("Found COM ports: ");
+	while (*pp) {
+		if (pp != comports)
+			printf(", ");
+		printf("%d", *pp);
+		pp++;
+	}
+	printf("\n");
 
 	//iterate thru the com-port list
 	while (*comports != 0) {
@@ -116,18 +131,21 @@ int fpga2_find_devices(int algo_id)
 		int fd = fpga2_open_by_port(port);
 		fpga_device_t device;
 
+		printf("COM %d: ", port);
 		if (fd <= 0) {
+			printf("Error opening port.\n");
 			//printf("Error opening COM %d.\n", port);
-			Sleep(50);
+			Sleep(100);
 			continue;
 		}
 		memset(&device, 0, sizeof(fpga_device_t));
 		device.port = port;
 
 		if (fpga2_read_ident(fd) != 0xDeadBeefCafeC0deULL) {
-			Sleep(50);
+			printf("No FPGA detected.\n");
+			Sleep(100);
 			fpga2_close(fd);
-			Sleep(50);
+			Sleep(100);
 			continue;
 		}
 
@@ -136,13 +154,13 @@ int fpga2_find_devices(int algo_id)
 		fpga2_read_dna(fd, &device);
 
 		//add delay
-		Sleep(50);
+		Sleep(100);
 
 		//close device
 		fpga2_close(fd);
 
 		//add delay
-		Sleep(50);
+		Sleep(100);
 
 		//add device to list if the algo id matches.
 		if (device.algo_id == algo_id) {
@@ -202,14 +220,15 @@ void fpga2_unlock_device(int fd, char* license)
 		*bufp++ = 0x70 + nib;
 		*bufp = 0;
 		chars++;
-		if (chars % 4 == 0)
-			printf("%X", nn++);
+		if (chars % 8 == 0)
+			printf(".");
+			//printf("%X", nn++);
 	}
 
-	printf(", done.\n");
+	//printf(", done.\n");
 }
 
-int fpga2_check_license(int i)
+int fpga2_check_license_old(int i)
 {
 	static int fail = 0;
 
@@ -328,4 +347,88 @@ int fpga2_get_device_by_com_port(int port)
 			return i;
 	}
 	return -1;
+}
+
+
+static int try_license(int fd, char *license_hash, fpga_device_t * device)
+{
+	const int max_fail = 3;
+	int fail;
+
+	for (fail = 0; fail < max_fail; fail++) {
+
+		//send license to fpga
+		fpga2_unlock_device(fd, license_hash); Sleep(50);
+
+		//read device info
+		fpga2_read_info(fd, device); Sleep(50);
+
+		//check if FPGA rejected the license
+		if (device->licvalid == 0) {
+			continue;
+		}
+
+		//fpga successfully unlocked
+		return 0;
+	}
+
+	//failed
+	return 1;
+}
+
+int fpga2_check_license(int i)
+{
+	char license_hash[1024 + 16];
+	int count;
+
+	//fpga has a valid license
+	if (devices[i].licvalid) {
+		printf("FPGA with DNA %s has a valid license.\n", devices[i].dna);
+		return 0;
+	}
+
+	//device reports its license is not valid
+	count = fpga2_license_count(devices[i].dna);
+
+	if (count <= 0) {
+		printf("No license found for FPGA with DNA %s\n", devices[i].dna);
+		return 1;
+	}
+
+	printf("Trying to unlock FPGA with DNA %s, found %d licenses.\n", devices[i].dna, count);
+
+	//open fpga
+	int fd = fpga2_open_by_port(devices[i].port);
+
+	//loop thru all licenses, trying them all
+	for (int j = 0; j < count; j++) {
+
+		//get hash from license database
+		if (fpga2_license_get(devices[i].dna, license_hash, j) == 0) {
+			printf("BUG: No license at index %d found for FPGA with DNA %s\n", j, devices[i].dna);
+			return 1;
+		}
+
+		printf("  License: %s...", license_hash);
+
+		if (try_license(fd, license_hash, &devices[i]) == 0) {
+			printf("unlocked.\n");
+			break;
+		}
+		printf("invalid.\n");
+
+	}
+
+	Sleep(50);
+
+	fpga2_close(fd);
+
+	Sleep(50);
+
+	if (devices[i].licvalid == 0) {
+		return 1;
+	}
+
+	//valid license
+	return 0;
 }

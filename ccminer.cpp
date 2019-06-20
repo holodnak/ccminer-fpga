@@ -71,6 +71,7 @@ char user_agent_str[128] = "ccminer/2.3.1";
 const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
 
 bool real_ident = false;
+bool less_difficult = false;
 bool more_difficult = false;
 int opt_algo_version = 1;
 
@@ -535,6 +536,7 @@ struct option options[] = {
 	{ "com-port", 1, NULL, 1095 },
 	{ "real-ident", 0, NULL, 1098 },
 	{ "start-clock", 1, NULL, 1099 },
+	{ "less-difficult", 0, NULL, 1699 },
 	{ "more-difficult", 0, NULL, 1700 },
 	{ "fast-clock-startup", 0, NULL, 1701 },
 	{ "clkrate", 1, NULL, 1097 },
@@ -2317,6 +2319,8 @@ static void *miner_thread(void *userdata)
 	}
 	else {
 		applog(LOG_INFO, "miner thread[%d]: error opening port %s", thr_id, devpath);
+		app_exit_code = EXIT_CODE_SW_INIT_ERROR;
+		abort_flag = true;
 		return NULL;
 	}
 
@@ -4245,6 +4249,9 @@ void parse_arg(int key, char *arg)
 	case 1099:
 		start_clock = atoi(arg);
 		break;
+	case 1699:
+		less_difficult = true;
+		break;
 	case 1700:
 		more_difficult = true;
 		break;
@@ -4676,10 +4683,7 @@ int main(int argc, char *argv[])
 		goto skipchecks;
 	}
 
-	printf("Detecting FPGAs");
-	Sleep(333); printf(".");
-	Sleep(333); printf(".");
-	Sleep(333); printf(".\n");
+	printf("Detecting FPGAs...\n");
 
 	//do license checks
 	if (fpga2_find_devices(fpga_algo_to_algoid(opt_algo)) == 0) {

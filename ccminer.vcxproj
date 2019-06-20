@@ -258,14 +258,9 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb.c" />
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facets_helper.c" />
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_five.c" />
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_four.c" />
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_one.c" />
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_six.c" />
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_three.c" />
-    <ClCompile Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_two.c" />
+    <ClCompile Include="CLicense.cpp" />
+    <ClCompile Include="CLicenseDB.cpp" />
+    <ClCompile Include="CLicenseList.cpp" />
     <ClCompile Include="compat\getopt\getopt_long.c" />
     <ClCompile Include="compat\gettimeofday.c" />
     <ClCompile Include="compat\jansson\dump.c" />
@@ -278,14 +273,9 @@
     <ClCompile Include="compat\jansson\strconv.c" />
     <ClCompile Include="compat\jansson\utf.c" />
     <ClCompile Include="compat\jansson\value.c" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb.h" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_five.h" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_four.h" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_one.h" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_six.h" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_three.h" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\facet_two.h" />
-    <ClInclude Include="C:\Temp\honeycomb_hash-master\honeycomb\honeycomb_types.h" />
+    <ClInclude Include="CLicense.h" />
+    <ClInclude Include="CLicenseDB.h" />
+    <ClInclude Include="CLicenseList.h" />
     <ClInclude Include="compat\pthreads\pthread.h" />
     <ClCompile Include="compat\winansi.c" />
     <ClCompile Include="ccminer.cpp">

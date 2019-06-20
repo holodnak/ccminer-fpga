@@ -22,14 +22,14 @@
 #include "serial.h"
 #include "algos.h"
 
-uint8_t* fpga2_find_com_ports()
+uint8_t* fpga2_find_com_ports2(uint8_t* ret)
 {
 	HANDLE handle;
 	char path[64];
 	int i;
-	uint8_t* ret, * p;
+	uint8_t* p;
 
-	p = ret = (uint8_t*)malloc(256 + 8);
+	p = ret;// = (uint8_t*)malloc(256 + 8);
 
 	*p = 0;
 	for (i = 1; i <= 255; i++) {
@@ -45,6 +45,35 @@ uint8_t* fpga2_find_com_ports()
 
 	}
 
+	return ret;
+}
+
+uint8_t* fpga2_find_com_ports(uint8_t* ret)
+{
+	uint8_t* p = ret;
+
+	p = ret;// = (uint8_t*)malloc(256 + 8);
+	*p = 0;
+	for (size_t i = 1; i < 256; i++)
+	{
+		char strPort[32] = { 0 };
+
+		sprintf(strPort, "COM%d", i);
+
+		DWORD dwSize = 0;
+		LPCOMMCONFIG lpCC = (LPCOMMCONFIG) new BYTE[1];
+		BOOL ret = GetDefaultCommConfig(strPort, lpCC, &dwSize);
+		delete[] lpCC;
+
+		lpCC = (LPCOMMCONFIG) new BYTE[dwSize];
+		ret = GetDefaultCommConfig(strPort, lpCC, &dwSize);
+		delete[] lpCC;
+
+		if (ret) {
+			*p++ = (uint8_t)i;
+			*p = 0;
+		}
+	}
 	return ret;
 }
 

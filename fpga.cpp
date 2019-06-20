@@ -539,15 +539,6 @@ void fpga_core_disable(int fd)
 
 int fpga_init_device(int fd, int sz, int startclk)
 {
-	char dna[16], dnahash[32];
-	char out[256];
-	char* dnap;
-
-	//read_fpga_dna(fd, (uint32_t*)dna);
-	//dnap = make_hex_str(8, dna + 8, (char*)out);
-
-	//applog(LOG_INFO, " . DNA: %s", dnap);
-
 	//clear fpga communication
 	fpga_send_start(fd);
 

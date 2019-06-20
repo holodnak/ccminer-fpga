@@ -73,6 +73,7 @@ typedef struct fpgainfo_s {
 #define ALGOID_GROESTL		0x13
 #define ALGOID_SKEIN2		0x14
 #define ALGOID_BMW512		0x15
+#define ALGOID_TRIBUS		0x16
 #define ALGOID_PHI1612		0x30
 #define ALGOID_POLYTIMOS	0x31
 #define ALGOID_BSHA3		0x32
@@ -146,8 +147,8 @@ int fpga2_find_licenses();
 int fpga2_check_license(int i);
 
 //fpga2_helper.cpp
-uint8_t* fpga2_find_com_ports();
-uint8_t* fpga2_find_fpga_ports();
+uint8_t* fpga2_find_com_ports(uint8_t* ret);
+//uint8_t* fpga2_find_fpga_ports();
 
 //fpga2_open.cpp
 int fpga2_open(const char* devpath);
@@ -159,6 +160,7 @@ void fpga2_close(int fd);
 int fpga2_license_clear_data();
 int fpga2_license_load_file(char* filename);
 int fpga2_license_load_path(char* path);
-int fpga2_license_get(const char* dna, char* hash);
+int fpga2_license_get(const char* dna, char* hash, int n=0);
+int fpga2_license_count(char* dna);
 
 int FindFiles(char* filter, void (*cb)(void*, char*), void* data);

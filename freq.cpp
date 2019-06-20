@@ -17,7 +17,8 @@
 #include "serial.h"
 
 
-#define FABIO_CAP	500
+#define FABIO_CAP	640
+#define FREQ_MAX	700
 
 volatile int cur_freq = 0;
 
@@ -58,7 +59,7 @@ int translate_freq(uint8_t fr)
 	case 0x1A: return(100);
 	case 0x1B: return(200);
 	}
-	return(0);
+	return(-1);
 }
 
 int mhz_to_freq(int fr)
@@ -80,6 +81,11 @@ int fpga_set_freq(int fd, int fr)
 		fr = FABIO_CAP;
 #endif
 
+	if (fr > FREQ_MAX) {
+		applog(LOG_INFO, "Reached maximum frequency: %d MHz", translate_freq((uint8_t)fr));
+		fr = FREQ_MAX;
+	}
+
 	if (fr >= 100) {
 		fr = mhz_to_freq(fr);
 		if (fr == -1) {
@@ -93,6 +99,11 @@ int fpga_set_freq(int fd, int fr)
 
 	//fpga_send_start(fd);
 	//uint8_t cmd55 = 0x55; for (int i = 0; i < 1024; i++)	fpga_write(fd, &cmd55, 1);	//reset
+
+	fpga_send_command(fd, 0x55);
+	fpga_send_command(fd, 0x55);
+	fpga_send_command(fd, 0x55);
+	fpga_send_command(fd, 0x55);
 
 	fpga_send_command(fd, 0x80 | (uint8_t)fr);
 
@@ -119,7 +130,8 @@ uint8_t fpga_get_freq(int fd)
 
 //static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400,420,440,460,480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
 //static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
-static int freq_seq[] = { 300, 400, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
+//static int freq_seq[] = { 300, 400, 420, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
+static int freq_seq[] = { 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
 
 int fpga_freq_increase(int fd)
 {
@@ -173,7 +185,12 @@ int fpga_freq_ramp_up(int fd, int dly, int *boot_seq, int startclk)
 
 	//default clock rate
 	if (startclk == 0)
-		startclk = 400;
+		startclk = 500;
+
+#ifdef FABIO_CAP
+	if (startclk > FABIO_CAP)
+		startclk = FABIO_CAP;
+#endif
 
 	//get current operating freq
 	cur_freq = fpga_get_freq(fd);
@@ -181,15 +198,15 @@ int fpga_freq_ramp_up(int fd, int dly, int *boot_seq, int startclk)
 	applog(LOG_INFO, "Slowly increasing clock rate...");
 
 	for (n = 0; boot_seq[n] != -1; n++) {
+		//if (startclk < boot_seq[n])
+		//	break;
 		applog(LOG_INFO, "Increasing clock: %dmhz...", boot_seq[n]);
 		fpga_set_freq(fd, boot_seq[n]);
 		Sleep(dly);
 		cur_freq = boot_seq[n];
-		if (startclk > 0 && startclk <= cur_freq)
-			break;
 	}
 
-	if (startclk > 0 && startclk > cur_freq) {
+	if (startclk > cur_freq) {
 		for (n = 0; freq_seq[n] != -1; n++) {
 			if (startclk <= freq_seq[n])
 				break;
@@ -207,15 +224,16 @@ int fpga_freq_ramp_up(int fd, int dly, int *boot_seq, int startclk)
 
 int fpga_freq_init_fast(int fd, int startclk)
 {
-	int boot_seq[] = { 100, 200, 300, 400, 500, 600, -1 };
+	//int boot_seq[] = { 100, 200, 300, 400, 500, 600, -1 };
+	int boot_seq[] = { 100, 200, 300, 400, 500, -1 };
 
-	return fpga_freq_ramp_up(fd, 750, boot_seq, startclk);
+	return fpga_freq_ramp_up(fd, 500, boot_seq, startclk);
 }
 
 int fpga_freq_init(int fd, int startclk)
 {
 	//int boot_seq[] = { 100, 200, 300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
-	  int boot_seq[] = { 100, 200, 300, 400, 500, 520, 540, 560, 580, 600, -1 };
+	int boot_seq[] = { 100, 200, 300, 400, 500, -1 };
 
 	return fpga_freq_ramp_up(fd, 3000, boot_seq, startclk);
 }
@@ -273,13 +291,13 @@ int fpga_freq_deinit(int fd, int sz)
 	memset(buf, 0, sz + 1);
 
 	//printf("FPGA is currently running at %d MHz, ramping down...\n", cur_freq);
-	applog(LOG_INFO, "FPGA clock is ramping down...\n");
+	applog(LOG_INFO, "FPGA clock is ramping down...");
 
 	for (n = 0; boot_seq[n] != -1; n++) {
 		if (cur_freq <= boot_seq[n])
 			continue;
 
-		applog(LOG_INFO, "Decreasing clock: %dmhz...\n", boot_seq[n]);
+		applog(LOG_INFO, "Decreasing clock: %dmhz...", boot_seq[n]);
 		fpga_set_freq(fd, boot_seq[n]);
 		Sleep(333);
 		cur_freq = boot_seq[n];

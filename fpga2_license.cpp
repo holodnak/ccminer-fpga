@@ -54,7 +54,14 @@ static char* EatInvalid(char* str) {
 static void AddLicense(char* id, char* hash) {
 	char hash_out[257];
 
-	if (fpga2_license_get(id,hash_out) == 0) {
+	if (num_licenses >= MAX_LICENSES) {
+		printf("Too many licenses.  Maximum of %d allowed.\n",MAX_LICENSES);
+		exit(0);
+	}
+
+	//commented out to allow multiple licenses for the same DNA
+//	if (fpga2_license_get(id,hash_out) == 0) 
+	{
 		strncpy((char*)licenses[num_licenses].dna, id, 16 * 4);
 		strncpy((char*)licenses[num_licenses].hash, hash, 256 * 4);
 		num_licenses++;
@@ -124,15 +131,36 @@ int fpga2_license_load_path(char* path)
 	return 0;
 }
 
-int fpga2_license_get(const char* dna, char* hash)
+int fpga2_license_get(const char* dna, char* hash, int n)
 {
-	int i;
+	int i, count = 0;
+
 	for (i = 0; i < num_licenses; i++) {
 		//printf("dna : %s\nhash: %s\n\n", licenses[i].dna, licenses[i].hash);
 		if (memcmp(dna, (const char*)licenses[i].dna, strlen(dna)) == 0) {
-			strcpy(hash, licenses[i].hash);
-			return 1;
+			if (count == n) {
+				strcpy(hash, licenses[i].hash);
+				return 1;
+			}
+			count++;
 		}
 	}
+	strcpy(hash, "");
 	return 0;
+}
+
+int fpga2_license_count(char* dna)
+{
+	int i;
+	int n = 0;
+
+	for (i = 0; i < num_licenses; i++) {
+
+		//check if matching dna
+		if (strcmpi(licenses[i].dna, dna) == 0) {
+			n++;
+		}
+	}
+
+	return n;
 }
