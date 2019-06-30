@@ -68,6 +68,7 @@ int fpga2_init()
 		devices[i].port = -1;
 	}
 	cur_device = -1;
+	return 0;
 }
 
 //destroy fpga library
@@ -101,18 +102,22 @@ int fpga2_find_licenses()
 	return 0;
 }
 
-
-int fpga2_find_devices(int algo_id)
+int fpga2_find_devices(int algo_id, int single_port)
 {
 	uint8_t buf[512];
+	uint8_t sp[2] = { 0,0 };
 	uint8_t* comports = fpga2_find_com_ports(buf);
+
+	sp[0] = (uint8_t)single_port;
+	if (single_port != -1)
+		comports = sp;
+	else
+		comports = fpga2_find_com_ports(buf);
 
 	if (num_devices > 0 || cur_device != -1) {
 		printf("fpga2_find_devices:  this should only be called once!!  error!!");
 		num_devices = 0;
 	}
-
-	Sleep(1000);
 
 	uint8_t* pp = comports;
 
@@ -131,11 +136,11 @@ int fpga2_find_devices(int algo_id)
 		int fd = fpga2_open_by_port(port);
 		fpga_device_t device;
 
-		printf("COM %d: ", port);
+		Sleep(50);
+		printf("COM %3d: ", port);
 		if (fd <= 0) {
 			printf("Error opening port.\n");
 			//printf("Error opening COM %d.\n", port);
-			Sleep(100);
 			continue;
 		}
 		memset(&device, 0, sizeof(fpga_device_t));
@@ -143,9 +148,8 @@ int fpga2_find_devices(int algo_id)
 
 		if (fpga2_read_ident(fd) != 0xDeadBeefCafeC0deULL) {
 			printf("No FPGA detected.\n");
-			Sleep(100);
 			fpga2_close(fd);
-			Sleep(100);
+			Sleep(50);
 			continue;
 		}
 
@@ -153,22 +157,20 @@ int fpga2_find_devices(int algo_id)
 		fpga2_read_info(fd, &device);
 		fpga2_read_dna(fd, &device);
 
-		//add delay
-		Sleep(100);
-
 		//close device
 		fpga2_close(fd);
 
 		//add delay
-		Sleep(100);
+		Sleep(50);
+
+		char out[64];
+		char* dnap = make_hex_str(12, device.dna, (char*)out);
+		strcpy(device.dna, dnap);
+		printf("DNA %s, %s (version %02Xu%d)\n", device.dna, fpga_algo_id_to_string(device.algo_id), device.version, device.userdata);
 
 		//add device to list if the algo id matches.
 		if (device.algo_id == algo_id) {
-			char out[64];
-			char *dnap = make_hex_str(12, device.dna, (char*)out);
-			strcpy(device.dna, dnap);
 			memcpy(&devices[num_devices++], &device, sizeof(fpga_device_t));
-			printf("found FPGA COM %d with DNA %s (%s)\n", port, device.dna, fpga_algo_id_to_string(device.algo_id));
 		}
 	}
 

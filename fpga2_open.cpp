@@ -47,7 +47,7 @@ int fpga2_open_by_port(int port)
 
 int fpga2_open_by_dna(const char* dna)
 {
-
+	return 0;
 }
 
 void fpga2_close(int fd)

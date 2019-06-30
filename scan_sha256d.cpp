@@ -10,7 +10,7 @@
 
 static __thread SHA256_CTX sha256q_ctx;
 
-void sha256q_midstate(const void* input)
+static void sha256d_midstate(const void* input)
 {
 	SHA256_Init(&sha256q_ctx);
 
@@ -21,7 +21,7 @@ void sha256q_midstate(const void* input)
 	SHA256_Update(&sha256q_ctx, input, 64);
 }
 
-void sha256q_hash(void* output, const void* input)
+static void sha256d_hash(void* output, const void* input)
 {
 	uint32_t _ALIGN(64) hash[16];
 	const int midlen = 64;            // bytes
@@ -38,19 +38,60 @@ void sha256q_hash(void* output, const void* input)
 	SHA256_Update(&ctx, hash, 32);
 	SHA256_Final((unsigned char*)hash, &ctx);
 
-	SHA256_Init(&ctx);
-	SHA256_Update(&ctx, hash, 32);
-	SHA256_Final((unsigned char*)hash, &ctx);
-
-	SHA256_Init(&ctx);
-	SHA256_Update(&ctx, hash, 32);
-	SHA256_Final((unsigned char*)hash, &ctx);
-
 	memcpy(output, hash, 32);
 }
 
+//int scanhash_sha256d_f(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+int scanhash_sha256d(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+{
+	uint32_t* pdata = work->data;
+	uint32_t* ptarget = work->target;
 
-int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
+	/*
+	uint32_t data[64];
+	uint32_t hash[8];
+	uint32_t midstate[8];
+	uint32_t prehash[8];
+	uint32_t n = pdata[19] - 1;
+	const uint32_t first_nonce = pdata[19];
+	const uint32_t Htarg = ptarget[7];
+
+	memcpy(data, pdata + 16, 64);
+	sha256d_preextend(data);
+
+	sha256_init(midstate);
+	sha256_transform(midstate, pdata, 0);
+	memcpy(prehash, midstate, 32);
+	sha256d_prehash(prehash, pdata + 16);
+	*/
+
+	/*
+	uint32_t endiandata[32];
+
+	for (int k = 0; k < 20; k++)
+		be32enc(&endiandata[k], pdata[k]);
+
+	sha256d_midstate(endiandata);
+
+	do {
+		data[3] = ++n;
+		sha256d_ms(hash, data, midstate, prehash);
+		if ((swab32(hash[7]) ^ 0x80000000) <= Htarg) {
+			pdata[19] = data[3];
+			sha256d_80_swap(hash, pdata);
+			if (fulltest(hash, ptarget)) {
+				*hashes_done = n - first_nonce + 1;
+				return 1;
+			}
+		}
+	} while (n < max_nonce && !work_restart[thr_id].restart);
+
+	*hashes_done = n - first_nonce + 1;
+	pdata[19] = n;*/
+	return 0;
+}
+
+int scanhash_sha256d_f(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	unsigned char wbuf[52];
 	uint32_t *pdata = work->data;
@@ -65,7 +106,7 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	for (int k = 0; k < 20; k++)
 		be32enc(&endiandata[k], pdata[k]);
 
-	sha256q_midstate(endiandata);
+	sha256d_midstate(endiandata);
 
 	//copy midstate
 	memcpy(wbuf, sha256q_ctx.h, 32);
@@ -75,16 +116,16 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	memcpy(wbuf + 48, ((unsigned char*)&work->target[6]), 4);
 
 	//swap endian of data + nonce + target
-	bswap(wbuf + 32, 20);
+	//bswap(wbuf + 32, 20);
 
 	//unswap nonce endian
-	bswap(wbuf + 44, 4);
+	//bswap(wbuf + 44, 4);
 
 	//reverse midstate
-	reverse(wbuf, 32);
+	//reverse(wbuf, 32);
 
 	//reverse data
-	reverse(wbuf + 32, 12);
+	//reverse(wbuf + 32, 12);
 
 #define SERIAL_READ_SIZE 8
 
@@ -180,7 +221,7 @@ int scanhash_sha256q(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 
 		for (int k = 0; k < 20; k++)
 			be32enc(&endiandata[k], pdata[k]);
-		sha256q_hash(hash_test, endiandata);
+		sha256d_hash(hash_test, endiandata);
 		if (fulltest(hash_test, work->target) == 0) {
 			thr_info[thr_id].hw_err++;
 			applog(LOG_INFO, "miner[%d] Nonce Invalid - Hardware Error", thr_id, swab32(nonce));

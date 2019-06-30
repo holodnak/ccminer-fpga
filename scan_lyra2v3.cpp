@@ -148,8 +148,8 @@ int scanhash_lyra2v3(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	const uint32_t first_nonce = pdata[19];
 	uint32_t nonce = first_nonce;
 
-	if (opt_benchmark)
-		ptarget[7] = 0x0000ff;
+	//if (opt_benchmark)
+		ptarget[7] = 0x00ffff;
 
 	for (int i = 0; i < 19; i++) {
 		be32enc(&endiandata[i], pdata[i]);
@@ -159,7 +159,8 @@ int scanhash_lyra2v3(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 		be32enc(&endiandata[19], nonce);
 		lyra2v3_hash(hash, endiandata);
 
-		if (hash[7] <= Htarg && fulltest(hash, ptarget)) {
+		//if (hash[7] <= Htarg && fulltest(hash, ptarget)) 
+		{
 			work_set_target_ratio(work, hash);
 			pdata[19] = nonce;
 			*hashes_done = pdata[19] - first_nonce;
@@ -167,6 +168,9 @@ int scanhash_lyra2v3(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 			for (int i = 0; i < 20; i++) {
 				be32enc(&endiandata[i], pdata[i]);
 			}
+
+			memset(endiandata, 0, 80);
+
 			lyra2v3_midstate(midstate, endiandata);
 
 			lyra2v3_hash_v(hash, endiandata);

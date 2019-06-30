@@ -100,6 +100,7 @@ static void ProcessLine(char* str) {
 int fpga2_license_clear_data()
 {
 	num_licenses = 0;
+	return 0;
 }
 
 int fpga2_license_load_file(char* filename)

@@ -40,6 +40,7 @@ struct {
 	{ ALGO_PHI, ALGOID_PHI1612 },
 	{ ALGO_BSHA3, ALGOID_BSHA3 },
 	{ ALGO_HONEYCOMB, ALGOID_HONEYCOMB },
+	{ ALGO_BLOCKSTAMP, ALGOID_BLOCKSTAMP },
 	{ -1, -1 }
 };
 
@@ -56,6 +57,7 @@ struct algo_id_str_s algo_id_str[] = {
 	{ ALGOID_PHI1612,	"PHI1612" },
 	{ ALGOID_BSHA3,		"BSHA3" },
 	{ ALGOID_HONEYCOMB,	"Honeycomb" },
+	{ ALGOID_BLOCKSTAMP,"Blockstamp" },
 	{ 0xFF, "" }
 };
 
@@ -364,7 +366,7 @@ char *fpga_algo_id_to_string(int id)
 {
 	int i;
 
-	strncpy(algo_str, "Unknown", 63);
+	sprintf(algo_str, "Unknown ($%02X)", (unsigned char)id);
 	for (i = 0; i < 0x100; i++) {
 		if (algo_id_str[i].id == 0xFF)
 			break;

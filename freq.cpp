@@ -18,7 +18,7 @@
 
 
 #define FABIO_CAP	640
-#define FREQ_MAX	700
+#define FREQ_MAX	800
 
 volatile int cur_freq = 0;
 
@@ -131,7 +131,7 @@ uint8_t fpga_get_freq(int fd)
 //static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400,420,440,460,480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
 //static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
 //static int freq_seq[] = { 300, 400, 420, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
-static int freq_seq[] = { 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
+static int freq_seq[] = { 300, 400, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
 
 int fpga_freq_increase(int fd)
 {
@@ -198,8 +198,8 @@ int fpga_freq_ramp_up(int fd, int dly, int *boot_seq, int startclk)
 	applog(LOG_INFO, "Slowly increasing clock rate...");
 
 	for (n = 0; boot_seq[n] != -1; n++) {
-		//if (startclk < boot_seq[n])
-		//	break;
+		if (startclk < boot_seq[n])
+			break;
 		applog(LOG_INFO, "Increasing clock: %dmhz...", boot_seq[n]);
 		fpga_set_freq(fd, boot_seq[n]);
 		Sleep(dly);

@@ -787,7 +787,7 @@ int timeval_subtract(struct timeval *result, struct timeval *x,
 	return x->tv_sec < y->tv_sec;
 }
 
-bool fulltest(const uint32_t *hash, const uint32_t *target)
+bool fulltest(const uint32_t* hash, const uint32_t* target)
 {
 	int i;
 	bool rc = true;
@@ -808,18 +808,18 @@ bool fulltest(const uint32_t *hash, const uint32_t *target)
 
 	if ((!rc && opt_debug) || opt_debug_diff) {
 		uint32_t hash_be[8], target_be[8];
-		char *hash_str, *target_str;
+		char* hash_str, * target_str;
 
 		for (i = 0; i < 8; i++) {
 			be32enc(hash_be + i, hash[7 - i]);
 			be32enc(target_be + i, target[7 - i]);
 		}
-		hash_str = bin2hex((uchar *)hash_be, 32);
-		target_str = bin2hex((uchar *)target_be, 32);
+		hash_str = bin2hex((uchar*)hash_be, 32);
+		target_str = bin2hex((uchar*)target_be, 32);
 
 		applog(LOG_DEBUG, "DEBUG: %s\nHash:   %s\nTarget: %s",
 			rc ? "hash <= target"
-			   : CL_YLW "hash > target (false positive)" CL_N,
+			: CL_YLW "hash > target (false positive)" CL_N,
 			hash_str,
 			target_str);
 
@@ -829,6 +829,59 @@ bool fulltest(const uint32_t *hash, const uint32_t *target)
 
 	return rc;
 }
+
+bool fulltest_blockstamp(const uint32_t* hash, const uint32_t* target)
+{
+	int i;
+	bool rc = true;
+
+	for (i = 7; i >= 0; i--) {
+
+		if (i == 7)
+		{
+			if (((hash[i] /*& 0x80000000*/) ^ 0x80000000) > target[i]) {
+				rc = false;
+				break;
+			}
+			if (((hash[i] /*& 0x80000000*/) ^ 0x80000000) < target[i]) {
+				rc = true;
+				break;
+			}
+		}
+		else
+		{
+			if (hash[i] > target[i]) {
+				rc = false;
+				break;
+			}
+			if (hash[i] < target[i]) {
+				rc = true;
+				break;
+			}
+		}
+	}
+
+	if (opt_debug) {
+		uint32_t hash_be[8], target_be[8];
+		char* hash_str, * target_str;
+
+		for (i = 0; i < 8; i++) {
+			be32enc(hash_be + i, hash[7 - i]);
+			be32enc(target_be + i, target[7 - i]);
+		}
+		hash_str = bin2hex((uchar*)hash_be, 32);
+		target_str = bin2hex((uchar*)target_be, 32);
+
+		applog(LOG_DEBUG, "DEBUG: %s\nHash:   %s\nTarget: %s",
+			rc ? "hash <= target"
+			: "hash > target (false positive)",
+			hash_str,
+			target_str);
+	}
+
+	return rc;
+}
+
 
 // Only used by stratum pools
 void diff_to_target(uint32_t *target, double diff)

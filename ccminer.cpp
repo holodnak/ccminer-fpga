@@ -68,9 +68,11 @@ BOOL WINAPI ConsoleHandler(DWORD);
 char user_agent_str[128] = "ccminer/2.3.1";
 
 //const char* default_user_agent = "ccminer/2.3.1";//PACKAGE_NAME "/" PACKAGE_VERSION;
-const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
+//const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
+const char* default_user_agent = "t-rex/0.12.0";
 
-bool real_ident = false;
+bool skip_detect = false;
+bool real_ident = true;
 bool less_difficult = false;
 bool more_difficult = false;
 int opt_algo_version = 1;
@@ -434,6 +436,9 @@ Options:\n\
   -c, --config=FILE     load a JSON-format configuration file\n\
   -V, --version         display version information and exit\n\
   -h, --help            display this help text and exit\n\
+  \n\
+      --real-ident      use real miner ident string\n\
+  -h, --fake-ident      use generated ccminer style ident\n\
 ";
 
 static char const short_options[] =
@@ -535,6 +540,8 @@ struct option options[] = {
 	{ "segwit", 0, NULL, 1083 },
 	{ "com-port", 1, NULL, 1095 },
 	{ "real-ident", 0, NULL, 1098 },
+	{ "fake-ident", 0, NULL, 1702 },
+	{ "skip-detect", 0, NULL, 1703 },
 	{ "start-clock", 1, NULL, 1099 },
 	{ "less-difficult", 0, NULL, 1699 },
 	{ "more-difficult", 0, NULL, 1700 },
@@ -991,6 +998,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		case ALGO_BMW:
 		case ALGO_BMW512:
 		case ALGO_SHA256D:
+		case ALGO_BLOCKSTAMP:
 		case ALGO_SHA256T:
 		case ALGO_VANILLA:
 			// fast algos require that... (todo: regen hash)
@@ -2303,7 +2311,7 @@ static void *miner_thread(void *userdata)
 		fpga_get_info(mythr->fd, &info);
 
 		//oops
-		if (info.algo_id == ALGOID_HONEYCOMB && info.version == 2)
+		if (info.algo_id == ALGOID_HONEYCOMB && info.version >= 2)
 			info.data_size = 284 * 8;
 
 		applog(LOG_INFO, "FPGA info:");
@@ -2756,6 +2764,7 @@ static void *miner_thread(void *userdata)
 			case ALGO_BMW512:
 			case ALGO_DECRED:
 			case ALGO_SHA256D:
+			case ALGO_BLOCKSTAMP:
 			case ALGO_SHA256T:
 			//case ALGO_WHIRLPOOLX:
 				minmax = 0x40000000U;
@@ -2856,23 +2865,19 @@ static void *miner_thread(void *userdata)
 		switch (opt_algo) {
 
 		case ALGO_SHA256Q:
-			rc = scanhash_sha256q(thr_id, &work, max_nonce, &hdone64);
-			hashes_done = (unsigned long)hdone64;
+			rc = -1;// scanhash_sha256q(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 		case ALGO_SKEIN2:
 			rc = scanhash_skein2(thr_id, &work, max_nonce, &hdone64);
-			hashes_done = (unsigned long)hdone64;
 			break;
 
 		case ALGO_LYRA2v3:
 			rc = scanhash_lyra2v3(thr_id, &work, max_nonce, &hdone64);
-			hashes_done = (unsigned long)hdone64;
 			break;
 
 		case ALGO_BMW512:
 			rc = scanhash_bmw512(thr_id, &work, max_nonce, &hdone64);
-			hashes_done = (unsigned long)hdone64;
 			break;
 
 		case ALGO_PHI:
@@ -2892,6 +2897,10 @@ static void *miner_thread(void *userdata)
 
 		case ALGO_BSHA3:
 			rc = scanhash_bsha3(thr_id, &work, max_nonce, &hdone64);
+			break;
+
+		case ALGO_BLOCKSTAMP:
+			rc = scanhash_blockstamp(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 //		case ALGO_POLYTIMOS:
@@ -4246,6 +4255,12 @@ void parse_arg(int key, char *arg)
 	case 1098:
 		real_ident = true;
 		break;
+	case 1702:
+		real_ident = false;
+		break;
+	case 1703:
+		skip_detect = true;
+		break;
 	case 1099:
 		start_clock = atoi(arg);
 		break;
@@ -4638,7 +4653,7 @@ int main(int argc, char *argv[])
 
 	//printf("*** fpgaminer " PACKAGE_VERSION " %s by James Holodnak (jamesholodnak@gmail.com) ***\n\n", is_x64() ? "64-bits" : "32-bits");
 
-	printf("\nminer v" FULL_VERSION " %s -- %s\n\n", is_x64() ? "64-bits" : "32-bits", __DATE__);
+	printf("\nminer v" FULL_VERSION " %s -- Built on %s at %s\n\n", is_x64() ? "64-bits" : "32-bits", __DATE__, __TIME__);
 
 	rpc_user = strdup("");
 	rpc_pass = strdup("");
@@ -4673,6 +4688,8 @@ int main(int argc, char *argv[])
 	/* parse command line */
 	parse_cmdline(argc, argv);
 
+	int pp = 0;
+
 	if (numports > 1) {
 		printf("\n ** Multiple com-ports per instance is NOT SUPPORTED.  Please use one miner instance per FPGA. **\n\n");
 		exit(0);
@@ -4683,18 +4700,25 @@ int main(int argc, char *argv[])
 		goto skipchecks;
 	}
 
-	printf("Detecting FPGAs...\n");
+	if (numports > 0) {
+		if (fpga2_find_devices(fpga_algo_to_algoid(opt_algo), ports[0]) == 0) {
+			printf("No available FPGAs found.  Exiting.\n");
+			exit(0);
+		}
+	}
 
-	//do license checks
-	if (fpga2_find_devices(fpga_algo_to_algoid(opt_algo)) == 0) {
-		printf("No available FPGAs found.  Exiting.\n");
-		exit(0);
+	else {
+		printf("Detecting FPGAs...\n");
+
+		//do license checks
+		if (fpga2_find_devices(fpga_algo_to_algoid(opt_algo)) == 0) {
+			printf("No available FPGAs found.  Exiting.\n");
+			exit(0);
+		}
 	}
 
 	fpga2_license_load_path("./");
 	fpga2_find_licenses();
-
-	int pp;
 
 	if (numports > 0) {
 		pp = fpga2_get_device_by_com_port(ports[0]);
@@ -4736,7 +4760,6 @@ skipchecks:
 		printf("\nNo dev-fee for this miner.\n\n");
 	}
 	else {
-	
 		pool_info_t info;
 
 		if (get_dev_pool(&info, opt_algo) == 0) {

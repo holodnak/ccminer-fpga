@@ -22,6 +22,8 @@
 #include "serial.h"
 #include "algos.h"
 
+#define MAX_COM_PORT 64
+
 uint8_t* fpga2_find_com_ports2(uint8_t* ret)
 {
 	HANDLE handle;
@@ -32,7 +34,7 @@ uint8_t* fpga2_find_com_ports2(uint8_t* ret)
 	p = ret;// = (uint8_t*)malloc(256 + 8);
 
 	*p = 0;
-	for (i = 1; i <= 255; i++) {
+	for (i = 1; i <= MAX_COM_PORT; i++) {
 
 		sprintf(path, "\\\\.\\COM%u", i);
 		handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, 0, 0);
@@ -134,13 +136,19 @@ bool fpga2_read_info(int fd, fpga_device_t* device)
 	fpga_send_command(fd, 0x04);
 	fpga_recv_response(fd, buf3);
 
+	//$02
 	device->algo_id = buf[4];
 	device->version = buf[5];
+	device->userdata = buf[6];
 	device->hardware = buf[7] & 0xF;
+
+	//$03
 	device->datasize = buf2[7] | (buf2[6] << 8);
+
+	//$04
 	device->fresh = (buf3[0] >> 7) & 1;
 	device->licvalid = (buf3[0] >> 6) & 1;
-	device->freq = buf3[5];
+	device->freq = buf3[1];
 
 	return true;
 }

@@ -79,6 +79,7 @@ typedef struct fpgainfo_s {
 #define ALGOID_BSHA3		0x32
 #define ALGOID_NEOSCRYPT	0x33
 #define ALGOID_HONEYCOMB	0x34
+#define ALGOID_BLOCKSTAMP	0x35
 
 //hardware definitions
 #define HW_XILINX	0x0
@@ -125,6 +126,7 @@ typedef struct fpga_device_s {
 	int licvalid;
 	int freq;
 	int algo_id;
+	int userdata;
 	int version;
 	int hardware;
 	int datasize;
@@ -133,7 +135,7 @@ typedef struct fpga_device_s {
 
 int fpga2_init();
 void fpga2_kill();
-int fpga2_find_devices(int algo_id);
+int fpga2_find_devices(int algo_id, int s = -1);
 uint64_t fpga2_read_ident(int fd);
 bool fpga2_read_dna(int fd, fpga_device_t* device);
 bool fpga2_read_info(int fd, fpga_device_t* device);

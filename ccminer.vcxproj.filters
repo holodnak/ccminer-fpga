@@ -263,6 +263,12 @@
     <ClCompile Include="CLicenseDB.cpp" />
     <ClCompile Include="CLicense.cpp" />
     <ClCompile Include="CLicenseList.cpp" />
+    <ClCompile Include="scan_tribus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="blockstamp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">
