@@ -29,6 +29,8 @@
 //#define MIN_DEV_DONATE_PERCENT 2.5
 //#define MIN_DEV_DONATE_PERCENT 8.0
 
+//always build 8% first, so you dont forget about having an 8% around.
+
 
 // 100 minutes
 #define DONATE_CYCLE_TIME 6000

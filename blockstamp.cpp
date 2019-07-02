@@ -643,7 +643,13 @@ int scanhash_blockstamp(int thr_id, struct work* work, uint32_t max_nonce, uint6
 	memcpy(my_target, work->target, 32);
 
 	my_target[7] = 0;
-	my_target[6] = 0xFFFFFFFF;
+
+	my_target[6] = 0x7FFFFFFF;
+
+	if(less_difficult)
+		my_target[6] = 0xFFFFFFFF;
+	else if(more_difficult)
+		my_target[6] = 0x3FFFFFFF;
 
 	sha256d_midstate(endiandata);
 
@@ -653,7 +659,7 @@ int scanhash_blockstamp(int thr_id, struct work* work, uint32_t max_nonce, uint6
 
 	memcpy(wbuf, midstate, 32);
 	memcpy(wbuf + 32, &endiandata[16], 16);
-	memcpy(wbuf + 48, ((unsigned char*)& my_target[7]), 4);
+	memcpy(wbuf + 48, ((unsigned char*)& my_target[6]), 4);
 
 	//bswap target
 	bswap(wbuf + 48, 4);
@@ -663,11 +669,11 @@ int scanhash_blockstamp(int thr_id, struct work* work, uint32_t max_nonce, uint6
 	reverse(wbuf + 32, 12);
 
 	//clear target to 0
-	memset(wbuf + 48, 0, 4);
+	//memset(wbuf + 48, 0, 4);
 
-	//	printf("wbuf: \n");
-	//	printData((char*)wbuf, 52);
-	//	printDataFPGA((char*)wbuf, 52);
+	//printf("wbuf: \n");
+	//printData((char*)wbuf, 52);
+	//printDataFPGA((char*)wbuf, 52);
 
 	//printf("target[6,7]: \n");
 	//printData((char*)& work->target[6], 8);

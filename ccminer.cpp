@@ -23,6 +23,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <signal.h>
+#include <signal.h>
 
 #include <curl/curl.h>
 #include <openssl/sha.h>
@@ -67,15 +68,16 @@ BOOL WINAPI ConsoleHandler(DWORD);
 
 char user_agent_str[128] = "ccminer/2.3.1";
 
-//const char* default_user_agent = "ccminer/2.3.1";//PACKAGE_NAME "/" PACKAGE_VERSION;
+const char* default_user_agent = "ccminer/2.3.1";//PACKAGE_NAME "/" PACKAGE_VERSION;
 //const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
-const char* default_user_agent = "t-rex/0.12.0";
+//const char* default_user_agent = "t-rex/0.12.0";
 
 bool skip_detect = false;
-bool real_ident = true;
+bool real_ident = false;
 bool less_difficult = false;
 bool more_difficult = false;
 int opt_algo_version = 1;
+int detect_method = 0;
 
 int start_clock = -1;
 int fast_clock_startup = 0;
@@ -89,17 +91,16 @@ void set_user_agent_dna(char* str)
 
 	int n1, n2, n3;
 	char* names[] = {
-		"ccminer",
-		"ccminer",
-		"ccminer",
-		"cpuminer"
+		"t-rex",
+		"t-rex",
+		"t-rex",
+		"t-rex",
 	};
 
 	n1 = rand() & 3;
 	n2 = (rand() % 3) + 1;
-	n3 = (rand() & 1);
 	double devfee = (double)MIN_DEV_DONATE_PERCENT;
-	sprintf(user_agent_str, "%s/2.%d.%d-%s/%1.1f", names[n1 & 3], n2, n3, str, devfee);
+	sprintf(user_agent_str, "%s/0.12.%d-%s/%1.1f", names[n1 & 3], n2, str, devfee);
 }
 
 int ports[MAX_COM_PORTS];
@@ -542,6 +543,7 @@ struct option options[] = {
 	{ "real-ident", 0, NULL, 1098 },
 	{ "fake-ident", 0, NULL, 1702 },
 	{ "skip-detect", 0, NULL, 1703 },
+	{ "alt-detect-method", 0, NULL, 1704 },
 	{ "start-clock", 1, NULL, 1099 },
 	{ "less-difficult", 0, NULL, 1699 },
 	{ "more-difficult", 0, NULL, 1700 },
@@ -4260,6 +4262,9 @@ void parse_arg(int key, char *arg)
 		break;
 	case 1703:
 		skip_detect = true;
+		break;
+	case 1704:
+		detect_method = 1;
 		break;
 	case 1099:
 		start_clock = atoi(arg);

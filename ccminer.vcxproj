@@ -303,7 +303,6 @@
     <ClCompile Include="scan_skein2.cpp" />
     <ClCompile Include="scan_tribus.cpp" />
     <ClCompile Include="serial.cpp" />
-    <ClCompile Include="simd_dbg.c" />
     <ClCompile Include="util.cpp" />
     <ClCompile Include="bench.cpp" />
     <ClCompile Include="bignum.cpp" />

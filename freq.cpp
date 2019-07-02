@@ -17,7 +17,7 @@
 #include "serial.h"
 
 
-#define FABIO_CAP	640
+//#define FABIO_CAP	640
 #define FREQ_MAX	800
 
 volatile int cur_freq = 0;

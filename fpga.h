@@ -150,6 +150,7 @@ int fpga2_check_license(int i);
 
 //fpga2_helper.cpp
 uint8_t* fpga2_find_com_ports(uint8_t* ret);
+uint8_t* fpga2_find_com_ports2(uint8_t* ret);
 //uint8_t* fpga2_find_fpga_ports();
 
 //fpga2_open.cpp

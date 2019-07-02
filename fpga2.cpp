@@ -102,11 +102,20 @@ int fpga2_find_licenses()
 	return 0;
 }
 
+extern int detect_method;
+
 int fpga2_find_devices(int algo_id, int single_port)
 {
 	uint8_t buf[512];
 	uint8_t sp[2] = { 0,0 };
-	uint8_t* comports = fpga2_find_com_ports(buf);
+	uint8_t* comports = sp;
+
+	switch (detect_method) {
+		default:
+		case 0: comports = fpga2_find_com_ports(buf); break;
+		case 1: comports = fpga2_find_com_ports2(buf); break;
+	}
+	
 
 	sp[0] = (uint8_t)single_port;
 	if (single_port != -1)

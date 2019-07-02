@@ -22,7 +22,7 @@
 #include "serial.h"
 #include "algos.h"
 
-#define MAX_COM_PORT 64
+#define MAX_COM_PORT 128   //256 is the max
 
 uint8_t* fpga2_find_com_ports2(uint8_t* ret)
 {
@@ -56,7 +56,7 @@ uint8_t* fpga2_find_com_ports(uint8_t* ret)
 
 	p = ret;// = (uint8_t*)malloc(256 + 8);
 	*p = 0;
-	for (size_t i = 1; i < 256; i++)
+	for (size_t i = 1; i < MAX_COM_PORT; i++)
 	{
 		char strPort[32] = { 0 };
 

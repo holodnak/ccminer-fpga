@@ -245,9 +245,6 @@
     <ClCompile Include="scan_honeycomb.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="simd_dbg.c">
-      <Filter>Source Files\sph</Filter>
-    </ClCompile>
     <ClCompile Include="fpga2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
