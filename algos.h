@@ -27,6 +27,7 @@ enum sha_algos {
 	ALGO_HMQ1725,
 	ALGO_HONEYCOMB,
 	ALGO_HSR,
+	ALGO_HTML,
 	ALGO_KECCAK,
 	ALGO_KECCAKC,		/* refreshed Keccak with pool factor 256 */
 	ALGO_JACKPOT,
@@ -41,6 +42,7 @@ enum sha_algos {
 	ALGO_MYR_GR,
 	ALGO_NEOSCRYPT,
 	ALGO_NIST5,
+	ALGO_ODO,
 	ALGO_PENTABLAKE,
 	ALGO_PHI,
 	ALGO_POLYTIMOS,
@@ -104,6 +106,7 @@ static const char *algo_names[] = {
 	"hmq1725",
 	"honeycomb",
 	"hsr",
+	"html",
 	"keccak",
 	"keccakc",
 	"jackpot",
@@ -118,6 +121,7 @@ static const char *algo_names[] = {
 	"myr-gr",
 	"neoscrypt",
 	"nist5",
+	"odocrypt",
 	"penta",
 	"phi",
 	"polytimos",
@@ -181,6 +185,8 @@ static inline int algo_to_int(char* arg)
 			i = ALGO_CRYPTOLIGHT;
 		else if (!strcasecmp("flax", arg))
 			i = ALGO_C11;
+		else if (!strcasecmp("odo", arg))
+			i = ALGO_ODO;
 		else if (!strcasecmp("diamond", arg))
 			i = ALGO_DMD_GR;
 		else if (!strcasecmp("equi", arg))
@@ -201,6 +207,8 @@ static inline int algo_to_int(char* arg)
 			i = ALGO_PHI;
 		else if (!strcasecmp("bitcoin", arg))
 			i = ALGO_SHA256D;
+		else if (!strcasecmp("htmlcoin", arg))
+			i = ALGO_HTML;
 		else if (!strcasecmp("sha256", arg))
 			i = ALGO_SHA256D;
 		else if (!strcasecmp("thorsriddle", arg))

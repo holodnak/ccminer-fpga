@@ -54,6 +54,8 @@ void lyra2v3_midstate(void *state, const void *input)
 
 	sph_blake256_context     ctx_blake;
 
+	sph_blake256_set_rounds(14);
+
 	sph_blake256_init(&ctx_blake);
 	sph_blake256(&ctx_blake, input, 64);
 
@@ -70,7 +72,7 @@ void lyra2v3_hash_v(void *state, const void *input)
 	sph_cubehash256_context  ctx_cubehash;
 	sph_bmw256_context       ctx_bmw;
 
-	//sph_blake256_set_rounds(14);
+	sph_blake256_set_rounds(14);
 
 	sph_blake256_init(&ctx_blake);
 	sph_blake256(&ctx_blake, input, 80);
@@ -106,7 +108,7 @@ void lyra2v3_hash_v(void *state, const void *input)
 	memcpy(state, hash, 32);
 }
 
-void lyra2v3_hash(void *state, const void *input)
+void lyra2v3_hash(void* state, const void* input)
 {
 	uint32_t _ALIGN(128) hash[8], hashB[8];
 
@@ -114,7 +116,7 @@ void lyra2v3_hash(void *state, const void *input)
 	sph_cubehash256_context  ctx_cubehash;
 	sph_bmw256_context       ctx_bmw;
 
-	//sph_blake256_set_rounds(14);
+	sph_blake256_set_rounds(14);
 
 	sph_blake256_init(&ctx_blake);
 	sph_blake256(&ctx_blake, input, 80);
@@ -130,26 +132,24 @@ void lyra2v3_hash(void *state, const void *input)
 
 	sph_bmw256_init(&ctx_bmw);
 	sph_bmw256(&ctx_bmw, hashB, 32);
-	//sph_bmw256_close(&ctx_bmw, hash);
-	sph_bmw256_close(&ctx_bmw, state);
+	sph_bmw256_close(&ctx_bmw, hash);
 
-	//memcpy(state, hash, 32);
+	memcpy(state, hash, 32);
 }
 
-int scanhash_lyra2v3(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
+int scanhash_lyra2v3(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	uint32_t _ALIGN(128) hash[8];
-	uint32_t _ALIGN(128) midstate[8];
 	uint32_t _ALIGN(128) endiandata[20];
-	uint32_t *pdata = work->data;
-	uint32_t *ptarget = work->target;
+	uint32_t* pdata = work->data;
+	uint32_t* ptarget = work->target;
 
 	const uint32_t Htarg = ptarget[7];
 	const uint32_t first_nonce = pdata[19];
 	uint32_t nonce = first_nonce;
 
-	//if (opt_benchmark)
-		ptarget[7] = 0x00ffff;
+	if (opt_benchmark)
+		ptarget[7] = 0x0000ff;
 
 	for (int i = 0; i < 19; i++) {
 		be32enc(&endiandata[i], pdata[i]);
@@ -159,46 +159,11 @@ int scanhash_lyra2v3(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 		be32enc(&endiandata[19], nonce);
 		lyra2v3_hash(hash, endiandata);
 
-		//if (hash[7] <= Htarg && fulltest(hash, ptarget)) 
-		{
+		if (hash[7] <= Htarg && fulltest(hash, ptarget)) {
 			work_set_target_ratio(work, hash);
 			pdata[19] = nonce;
+			memcpy(&work->nonces[0], &nonce, 4);
 			*hashes_done = pdata[19] - first_nonce;
-
-			for (int i = 0; i < 20; i++) {
-				be32enc(&endiandata[i], pdata[i]);
-			}
-
-			memset(endiandata, 0, 80);
-
-			lyra2v3_midstate(midstate, endiandata);
-
-			lyra2v3_hash_v(hash, endiandata);
-
-			printf("found ptarget:\n\n");
-			printData(&ptarget[6], 8);
-
-			printf("found midstate:\n\n");
-			printData(midstate, 32);
-			printDataFPGA(midstate, 32);
-
-			printf("found hash:\n\n");
-			printData(hash, 32);
-
-			printf("found endian data:\n\n");
-			printData(endiandata, 80);
-			printDataFPGA(endiandata, 80);
-			printf("\n\n");
-
-			printf("found pdata:\n\n");
-			printData(pdata, 80);
-			printDataFPGA(pdata, 80);
-			printf("\n\n");
-
-			printf("valid hash!\n");
-
-			system("pause");
-
 			return 1;
 		}
 		nonce++;

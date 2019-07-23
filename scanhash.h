@@ -12,3 +12,5 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 int scanhash_honeycomb_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
 int scanhash_bsha3(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
 int scanhash_blockstamp(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
+int scanhash_html(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
+int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);

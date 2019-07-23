@@ -17,8 +17,8 @@
 #include "serial.h"
 
 
-//#define FABIO_CAP	640
-#define FREQ_MAX	800
+//#define FABIO_CAP	900
+#define FREQ_MAX	920
 
 volatile int cur_freq = 0;
 
@@ -58,6 +58,32 @@ int translate_freq(uint8_t fr)
 	case 0x19: return(480);
 	case 0x1A: return(100);
 	case 0x1B: return(200);
+	case 0x1C: return(810);
+	case 0x1D: return(820);
+	case 0x1E: return(830);
+	case 0x1F: return(840);
+	case 0x20: return(850);
+	case 0x21: return(860);
+	case 0x22: return(870);
+	case 0x23: return(880);
+	case 0x24: return(890);
+	case 0x25: return(900);
+	case 0x26: return(910);
+	case 0x27: return(910);
+	case 0x28: return(920);
+
+	//not working
+	case 0x29: return(925);
+
+	case 0x2A: return(790);
+	case 0x2B: return(770);
+	case 0x2C: return(750);
+	case 0x2D: return(730);
+	case 0x2E: return(710);
+	case 0x2F: return(250);
+	case 0x30: return(150);
+	case 0x31: return( 50);
+	case 0x32: return( 10);
 	}
 	return(-1);
 }
@@ -117,8 +143,7 @@ uint8_t fpga_get_freq(int fd)
 	uint8_t buf[8];
 	uint8_t ret;
 
-	fpga_send_command(fd, 0x04);
-	fpga_recv_response(fd, buf);
+	fpga2_exec_command(fd, 0x04, buf);
 
 	ret = buf[1] & 0x7F;
 
@@ -126,12 +151,16 @@ uint8_t fpga_get_freq(int fd)
 	return ret;
 }
 
-//static int freq_seq[] = { 100, 300, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
+//static int freq_seq[] = { 10, 100, 200, 300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, 810, 820, 830, 840, 850, 860, 870, 880, 890, 900, -1 };
+static int freq_seq[] = { 
 
-//static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400,420,440,460,480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
-//static int freq_seq[] = { 100, 200, 300, 320,340,360,380,400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
-//static int freq_seq[] = { 300, 400, 420, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
-static int freq_seq[] = { 300, 400, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, -1 };
+	50, 100, 150, 200, 250,
+
+	300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680,
+
+	700, /*710,*/ 720, 730, 740, 750, 760, 770, 780, 790, 800, 810, 820, 830, 840, 850, 860, 870, 880, 890, 900, 910, 920, //925,
+
+	-1 };
 
 int fpga_freq_increase(int fd)
 {
@@ -224,63 +253,22 @@ int fpga_freq_ramp_up(int fd, int dly, int *boot_seq, int startclk)
 
 int fpga_freq_init_fast(int fd, int startclk)
 {
-	//int boot_seq[] = { 100, 200, 300, 400, 500, 600, -1 };
-	int boot_seq[] = { 100, 200, 300, 400, 500, -1 };
+	int boot_seq[] = { 50, 100, 150, 200, 250, 300, 400, 500, 560, 620, 660, 700, 720, 740, 760, 780, 800, -1 };
 
-	return fpga_freq_ramp_up(fd, 500, boot_seq, startclk);
+	return fpga_freq_ramp_up(fd, 250, boot_seq, startclk);
 }
 
 int fpga_freq_init(int fd, int startclk)
 {
-	//int boot_seq[] = { 100, 200, 300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 720, 740, 760, 780, 800, -1 };
-	int boot_seq[] = { 100, 200, 300, 400, 500, -1 };
+	int boot_seq[] = { 50, 100, 150, 200, 250, 300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 660, 680, 700, 710, 720, 730, 740, 750, 760, 770, 780, 790, 800, -1 };
 
-	return fpga_freq_ramp_up(fd, 3000, boot_seq, startclk);
+	return fpga_freq_ramp_up(fd, 1000, boot_seq, startclk);
 }
-
-
-/*int fpga_freq_init(int fd, int sz, int startclk)
-{
-
-	//	int n, boot_seq[] = { 100, 200, 300, 380, 460, 500, -1 };
-	int n, boot_seq[] = { 100, 200, 300, 400, 500, -1 };
-	int start_freq = 100;
-
-	//get current operating freq
-	cur_freq = fpga_get_freq(fd);
-
-	applog(LOG_INFO, "Slowly increasing clock rate...");
-	fpga_set_freq(fd, start_freq);
-	Sleep(500);
-
-	for (n = 0; boot_seq[n] != -1; n++) {
-		applog(LOG_INFO, "Increasing clock: %dmhz...", boot_seq[n]);
-		fpga_set_freq(fd, boot_seq[n]);
-		Sleep(500);
-		cur_freq = boot_seq[n];
-		if (startclk > 0 && startclk < cur_freq)
-			break;
-	}
-
-	if (startclk > 0) {
-		for (n = 0; freq_seq[n] != -1; n++) {
-			if (startclk <= freq_seq[n])
-				break;
-		}
-		if (freq_seq[n] != -1) {
-			cur_freq = freq_seq[n];
-			applog(LOG_INFO, "Setting user specified clock: %dmhz...", cur_freq);
-			fpga_set_freq(fd, cur_freq);
-		}
-	}
-
-	return 0;
-}*/
 
 int fpga_freq_deinit(int fd, int sz)
 {
 
-	int n, boot_seq[] = { 400, 300, 200, 100, -1 };
+	int n, boot_seq[] = { 700, 600, 500, 400, 300, 200, 100, 50, -1 };//{ 700, 600, 500, 400, 300, 200, 100, 10, -1 };
 	int start_freq = 100;
 	static uint8_t buf[1024];
 
@@ -290,17 +278,15 @@ int fpga_freq_deinit(int fd, int sz)
 	}
 	memset(buf, 0, sz + 1);
 
-	//printf("FPGA is currently running at %d MHz, ramping down...\n", cur_freq);
-	applog(LOG_INFO, "FPGA clock is ramping down...");
+	applog(LOG_INFO, "FPGA is currently running at %d MHz, ramping down...\n", cur_freq);
 
 	for (n = 0; boot_seq[n] != -1; n++) {
-		if (cur_freq <= boot_seq[n])
-			continue;
-
-		applog(LOG_INFO, "Decreasing clock: %dmhz...", boot_seq[n]);
-		fpga_set_freq(fd, boot_seq[n]);
-		Sleep(333);
-		cur_freq = boot_seq[n];
+		if (cur_freq > boot_seq[n]) {
+			applog(LOG_INFO, "Decreasing clock: %dmhz...", boot_seq[n]);
+			fpga_set_freq(fd, boot_seq[n]);
+			Sleep(200);
+			cur_freq = boot_seq[n];
+		}
 	}
 
 	fpga_core_disable(fd);
@@ -320,36 +306,6 @@ static int get_key()
 		return _getch();
 	}
 	return 0;
-
-	/*	DWORD mode, rd;
-		HANDLE h;
-
-		if ((h = GetStdHandle(STD_INPUT_HANDLE)) == NULL)
-			return -1;
-		INPUT_RECORD ir[8];
-		DWORD i, n = 0;
-		int c = 0;
-
-		GetConsoleMode(h, &mode);
-		SetConsoleMode(h, mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_MOUSE_INPUT));
-
-		if (PeekConsoleInput(h, ir, 8, &n) != 0) {
-			if (n > 0) {
-				printf("console has an event: %d events.\n", n);
-				for (i = 0; i < n; i++) {
-					if (ir[i].EventType == KEY_EVENT) {
-						c = 0;
-						ReadConsole(h, &c, 1, &rd, NULL);
-						SetConsoleMode(h, mode);
-						break;
-					}
-				}
-	//			printf("flushing buffer\n");
-				FlushConsoleInputBuffer(h);
-			}
-		}
-
-		return c;*/
 }
 
 int fpga_freq_check_keys(int fd)
@@ -363,12 +319,16 @@ int fpga_freq_check_keys(int fd)
 
 	case '-':
 		return fpga_freq_decrease(fd);
-
+		/*
 	case 'C':
 	case 'c':
 		return -1;
 
+	case 'E':
+	case 'e':
+		return -2;
+		*/
 	}
 
-	return 0;
+	return key;
 }

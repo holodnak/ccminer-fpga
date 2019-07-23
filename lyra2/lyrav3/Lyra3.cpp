@@ -49,7 +49,7 @@ extern "C" {
 * @return 0 if the key is generated correctly; -1 if there is an error (usually due to lack of memory for allocation)
 */
 
-int LYRA2_3(void *K, int64_t kLen, const void *pwd, int32_t pwdlen, const void *salt, int32_t saltlen, int64_t timeCost, const int16_t nRows, const int16_t nCols)
+int LYRA2_3(void* K, int64_t kLen, const void* pwd, int32_t pwdlen, const void* salt, int32_t saltlen, int64_t timeCost, const int16_t nRows, const int16_t nCols)
 {
 	//============================= Basic variables ============================//
 	int64_t row = 2; //index of row to be processed
@@ -72,19 +72,19 @@ int LYRA2_3(void *K, int64_t kLen, const void *pwd, int32_t pwdlen, const void *
 	const int64_t BLOCK_LEN = BLOCK_LEN_BLAKE2_SAFE_INT64;
 
 	size_t sz = (size_t)ROW_LEN_BYTES * nRows;
-	uint64_t *wholeMatrix = (uint64_t *)malloc(sz);
+	uint64_t* wholeMatrix = (uint64_t *)malloc(sz);
 	if (wholeMatrix == NULL) {
 		return -1;
 	}
 	memset(wholeMatrix, 0, sz);
 
 	//Allocates pointers to each row of the matrix
-	uint64_t **memMatrix = (uint64_t **)malloc(sizeof(uint64_t*) * nRows);
+	uint64_t** memMatrix = (uint64_t * *)malloc(sizeof(uint64_t*) * nRows);
 	if (memMatrix == NULL) {
 		return -1;
 	}
 	//Places the pointers in the correct positions
-	uint64_t *ptrWord = wholeMatrix;
+	uint64_t* ptrWord = (uint64_t *)wholeMatrix;
 	for (i = 0; i < nRows; i++) {
 		memMatrix[i] = ptrWord;
 		ptrWord += ROW_LEN_INT64;
@@ -98,7 +98,7 @@ int LYRA2_3(void *K, int64_t kLen, const void *pwd, int32_t pwdlen, const void *
 	//First, we clean enough blocks for the password, salt, basil and padding
 	int64_t nBlocksInput = ((saltlen + pwdlen + 6 * sizeof(uint64_t)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
 
-	byte *ptrByte = (byte*)wholeMatrix;
+	byte * ptrByte = (byte*)wholeMatrix;
 
 	//Prepends the password
 	memcpy(ptrByte, pwd, pwdlen);
@@ -134,10 +134,10 @@ int LYRA2_3(void *K, int64_t kLen, const void *pwd, int32_t pwdlen, const void *
 	ptrByte = (byte*)wholeMatrix; //resets the pointer to the start of the memory matrix
 	ptrByte += nBlocksInput * BLOCK_LEN_BLAKE2_SAFE_BYTES - 1; //sets the pointer to the correct position: end of incomplete block
 	*ptrByte ^= 0x01; //last byte of padding: at the end of the last incomplete block
-					  //==========================================================================/
+	//==========================================================================/
 
-					  //======================= Initializing the Sponge State ====================//
-					  //Sponge state: 16 uint64_t, BLOCK_LEN_INT64 words of them for the bitrate (b) and the remainder for the capacity (c)
+	//======================= Initializing the Sponge State ====================//
+	//Sponge state: 16 uint64_t, BLOCK_LEN_INT64 words of them for the bitrate (b) and the remainder for the capacity (c)
 	uint64_t state[16];
 	initState(state);
 	//==========================================================================/
@@ -201,8 +201,8 @@ int LYRA2_3(void *K, int64_t kLen, const void *pwd, int32_t pwdlen, const void *
 			//updates row: goes to the next row to be computed
 			//------------------------------------------------------------------------------------------
 			row = (row + step) & (unsigned int)(nRows - 1); //(USE THIS IF nRows IS A POWER OF 2)
-															//row = (row + step) % nRows; //(USE THIS FOR THE "GENERIC" CASE)
-															//------------------------------------------------------------------------------------------
+			//row = (row + step) % nRows; //(USE THIS FOR THE "GENERIC" CASE)
+			//------------------------------------------------------------------------------------------
 
 		} while (row != 0);
 	}

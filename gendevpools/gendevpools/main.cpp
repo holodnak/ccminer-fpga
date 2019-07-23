@@ -20,11 +20,13 @@ pool_info_t devpools[] = {/*
 	{ ALGO_BMW512,		"stratum+tcp://us.gos.cx:3100",					        "BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },
 	{ ALGO_BMW512,		"stratum+tcp://smilingmining.com:4766",					"BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },*/
 	{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },	//fabio
-	{ ALGO_HONEYCOMB,	"stratum+tcp://78.141.211.56:7777",					    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
-	{ ALGO_BLOCKSTAMP,  "stratum+tcp://pool.bsod.pw:2502",                      "18Vsh1ZnrfzKheKyA7aasWHQuUVDNWC3t8",       "x" },  //fabio
+	{ ALGO_HONEYCOMB,	"stratum+tcp://honeycomb.mine.zergpool.com:3757",	    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
+	{ ALGO_HONEYCOMB,	"stratum+tcp://45.32.187.155:7777",	                    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
+	{ ALGO_HONEYCOMB,	"stratum+tcp://us.gethash.cc:8887",	                    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
+	{ ALGO_BLOCKSTAMP,  "stratum+tcp://209.250.240.34:3333",                    "3533R6G4DLnfoQM6Qp25e4zjYFSWxn1aNB",       "x" },  //fabio
+	{ ALGO_BLOCKSTAMP,  "stratum+tcp://pool.bsod.pw:2502",                      "3533R6G4DLnfoQM6Qp25e4zjYFSWxn1aNB",       "x" },  //fabio
 	{0,0,0,0}
 };
-
 
 void make_str(char *dst, char *src) {
 	while (*src) {

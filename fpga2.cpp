@@ -63,6 +63,7 @@ int fpga2_init()
 {
 	int i;
 
+	fpga2_crc_init();
 	memset(devices, 0, sizeof(fpga_device_t) * MAX_DEVICES);
 	for (i = 0; i < MAX_DEVICES; i++) {
 		devices[i].port = -1;
@@ -92,7 +93,7 @@ int fpga2_find_licenses()
 	fprintf(fo, "; this is a list of the detected FPGA devices without a corresponding license key.\n;\n");
 	fprintf(fo, "; if you have license keys for other bitstreams, nothing will be output here.\n;\n");
 	for (i = 0; i < num_devices; i++) {
-		if (fpga2_license_get(devices[i].dna, license_hash) == 0) {
+		if (fpga2_license_get(devices[i].dna, license_hash,0) == 0) {
 			printf("No license available for DNA %s\n", devices[i].dna);
 			fprintf(fo, "%s\n", devices[i].dna);
 		}
@@ -249,7 +250,7 @@ int fpga2_check_license_old(int i)
 		char license_hash[1024 + 16];
 
 		//get hash from license database
-		if (fpga2_license_get(devices[i].dna, license_hash) == 0) {
+		if (fpga2_license_get(devices[i].dna, license_hash,0) == 0) {
 			printf("No license found for FPGA with DNA %s\n", devices[i].dna);
 			return 1;
 		}

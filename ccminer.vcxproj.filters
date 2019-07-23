@@ -78,9 +78,6 @@
     <ClCompile Include="pools.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="crc32.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="sph\aes_helper.c">
       <Filter>Source Files\sph</Filter>
     </ClCompile>
@@ -266,6 +263,20 @@
     <ClCompile Include="blockstamp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="fpga2_crc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crc32.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_html.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_odo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="odo\KeccakP-800-reference.c" />
+    <ClCompile Include="odo\odocrypt.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">
@@ -439,6 +450,10 @@
     <ClInclude Include="CLicenseDB.h" />
     <ClInclude Include="CLicense.h" />
     <ClInclude Include="CLicenseList.h" />
+    <ClInclude Include="odo\brg_endian.h" />
+    <ClInclude Include="odo\hashodo.h" />
+    <ClInclude Include="odo\KeccakP-800-SnP.h" />
+    <ClInclude Include="odo\odocrypt.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\ccminer.ico">

@@ -1,5 +1,14 @@
 #pragma once
 
+#ifndef NO_MINER_H
+
+#include "miner.h"
+
+#else
+typedef struct fpgainfo_s { int unk; } fpgainfo_t;
+
+#endif
+
 #ifdef WIN32
 #ifndef timersub
 #define timersub(a, b, result)                     \
@@ -56,13 +65,14 @@ int fpga_freq_check_keys(int fd);
 int fpga_freq_init(int fd, int startclk);
 int fpga_freq_init_fast(int fd, int startclk);
 
+/*
 typedef struct fpgainfo_s {
 	uint8_t algo_id;
-	uint8_t version;
+	uint8_t version, userbyte;
 	uint8_t target;
 	uint16_t data_size;
 } fpgainfo_t;
-
+*/
 //algo id definitions
 #define ALGOID_TEST			0x00
 #define ALGOID_0xBITCOIN	0x01
@@ -74,12 +84,16 @@ typedef struct fpgainfo_s {
 #define ALGOID_SKEIN2		0x14
 #define ALGOID_BMW512		0x15
 #define ALGOID_TRIBUS		0x16
+#define ALGOID_LYRA2V3		0x17
+#define ALGOID_LYRA2VC0BAN	0x18
 #define ALGOID_PHI1612		0x30
 #define ALGOID_POLYTIMOS	0x31
 #define ALGOID_BSHA3		0x32
 #define ALGOID_NEOSCRYPT	0x33
 #define ALGOID_HONEYCOMB	0x34
 #define ALGOID_BLOCKSTAMP	0x35
+#define ALGOID_HTMLCOIN		0x40
+#define ALGOID_ODOCRYPT		0x41
 
 //hardware definitions
 #define HW_XILINX	0x0
@@ -95,12 +109,11 @@ struct algo_id_str_s {
 extern struct algo_id_str_s algo_id_str[];
 
 int fpga_send_start(int fd);
-int fpga_get_info(int fd, fpgainfo_t *info);
+int fpga_get_info(int fd, fpgainfo_t*info);
 uint64_t fpga_get_ident(int fd);
 
 int fpga_send_data(int fd, void *buf, size_t sz);
 int fpga_send_command(int fd, uint8_t cmd);
-int fpga_recv_response(int fd, uint8_t *buf);
 
 int fpga_init_device(int fd, int sz, int startclk);
 
@@ -152,6 +165,9 @@ int fpga2_check_license(int i);
 uint8_t* fpga2_find_com_ports(uint8_t* ret);
 uint8_t* fpga2_find_com_ports2(uint8_t* ret);
 //uint8_t* fpga2_find_fpga_ports();
+int fpga2_recv_response(int fd, uint8_t* buf);
+int fpga2_exec_command(int fd, uint8_t cmd, uint8_t* buf);
+int FindFiles(char* filter, void (*cb)(void*, char*),void* data);
 
 //fpga2_open.cpp
 int fpga2_open(const char* devpath);
@@ -166,4 +182,7 @@ int fpga2_license_load_path(char* path);
 int fpga2_license_get(const char* dna, char* hash, int n=0);
 int fpga2_license_count(char* dna);
 
-int FindFiles(char* filter, void (*cb)(void*, char*), void* data);
+//fpga2_crc.cpp
+void fpga2_crc_init();
+uint16_t fpga2_crc_calc(void* buf, int len);
+

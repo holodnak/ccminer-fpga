@@ -22,6 +22,9 @@
  * RVN donation address: RWoSZX6j6WU6SVTVq5hKmdgPmmrYE9be5R
  *
  */
+
+#ifndef MIN_DEV_DONATE_PERCENT
+
 //#define MIN_DEV_DONATE_PERCENT 4.5
 //#define MIN_DEV_DONATE_PERCENT 10.0
 #define MIN_DEV_DONATE_PERCENT 0.0
@@ -31,6 +34,7 @@
 
 //always build 8% first, so you dont forget about having an 8% around.
 
+#endif
 
 // 100 minutes
 #define DONATE_CYCLE_TIME 6000

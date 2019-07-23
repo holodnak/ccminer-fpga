@@ -500,6 +500,12 @@ struct hashlog_data {
 };
 
 /* end of api */
+typedef struct fpgainfo_s {
+	uint8_t algo_id;
+	uint8_t version, userbyte;
+	uint8_t target;
+	uint16_t data_size;
+} fpgainfo_t;
 
 struct thr_info {
 	int		id;
@@ -510,6 +516,11 @@ struct thr_info {
 	int fd;
 	int solutions;
 	int hw_err;
+	int crc_err;
+	int comm_timeouts;
+	int cid_sols[256];
+	int cid_errs[256];
+	fpgainfo_t fpga_info;
 };
 
 struct work_restart {
@@ -720,7 +731,7 @@ struct tx {
 #define MAX_NONCES 2
 struct work {
 	uint32_t data[48];
-	uint32_t target[8];
+	uint32_t target[8], my_target[8];
 	uint32_t maxvote;
 
 	char job_id[128];
@@ -754,6 +765,9 @@ struct work {
 	char *workid;
 	// zec solution
 	uint8_t extra[1388];
+
+	//htmlcoin
+	uint32_t data_len;
 };
 
 #define POK_BOOL_MASK 0x00008000

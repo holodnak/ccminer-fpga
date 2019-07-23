@@ -1870,9 +1870,11 @@ static bool stratum_unknown_method(struct stratum_ctx *sctx, json_t *id)
 	return ret;
 }
 
+extern uint64_t odocrypt_current_key;
+
 bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 {
-	json_t *val, *id, *params;
+	json_t *val, *id, *params, *odokey;
 	json_error_t err;
 	const char *method;
 	bool ret = false;
@@ -1890,6 +1892,12 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	params = json_object_get(val, "params");
 
 	if (!strcasecmp(method, "mining.notify")) {
+		odokey = json_object_get(val, "odokey");
+
+		odocrypt_current_key = (uint64_t)json_integer_value(odokey);
+
+		//applog(LOG_ERR, "Odocrypt key: %d", (int)odocrypt_current_key);
+		
 		ret = stratum_notify(sctx, params);
 		goto out;
 	}

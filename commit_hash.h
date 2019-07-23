@@ -1,1 +1,1 @@
-#define COMMIT_HASH "a58e7ebe"
+#define COMMIT_HASH "bc479ca6"

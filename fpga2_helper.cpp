@@ -84,8 +84,7 @@ uint64_t fpga2_read_ident(int fd)
 	uint8_t buf[8];
 	uint64_t ret;
 
-	fpga_send_command(fd, 0x07);
-	fpga_recv_response(fd, buf);
+	fpga2_exec_command(fd, 0x07, buf);
 
 	bswap((unsigned char*)buf, 8);
 
@@ -98,14 +97,12 @@ bool fpga2_read_dna(int fd, fpga_device_t* device)
 	uint32_t dna[4];
 	uint32_t buf[2];
 
-	fpga_send_command(fd, 0x05);
-	fpga_recv_response(fd, (uint8_t*)buf);
+	fpga2_exec_command(fd, 0x05, (uint8_t*)buf);
 
 	dna[2] = buf[0];
 	dna[3] = buf[1];
 
-	fpga_send_command(fd, 0x06);
-	fpga_recv_response(fd, (uint8_t*)buf);
+	fpga2_exec_command(fd, 0x06, (uint8_t*)buf);
 
 	dna[0] = buf[0];
 	dna[1] = buf[1];
@@ -127,14 +124,9 @@ bool fpga2_read_info(int fd, fpga_device_t* device)
 	uint8_t buf2[8];
 	uint8_t buf3[8];
 
-	fpga_send_command(fd, 0x02);
-	fpga_recv_response(fd, buf);
-
-	fpga_send_command(fd, 0x03);
-	fpga_recv_response(fd, buf2);
-
-	fpga_send_command(fd, 0x04);
-	fpga_recv_response(fd, buf3);
+	fpga2_exec_command(fd, 0x02, buf);
+	fpga2_exec_command(fd, 0x03, buf2);
+	fpga2_exec_command(fd, 0x04, buf3);
 
 	//$02
 	device->algo_id = buf[4];
@@ -187,4 +179,41 @@ int FindFiles(char* filter, void (*cb)(void*, char*), void* data)
 
 	FindClose(hFind);
 	return 0;
+}
+
+int fpga2_recv_response(int fd, uint8_t* buf)
+{
+	uint8_t buf2[16];
+	size_t len = 0;
+	int ret;
+
+	memset(buf2, 0, 16);
+	ret = fpga_read(fd, buf2, 10, &len);
+
+	memcpy(buf, buf2, 8);
+
+	//return length if there was data recieved
+	if (len == 10) {
+		uint16_t crc = buf2[9] | (buf2[8] << 8);
+
+		//detect crc errors
+		if (crc != fpga2_crc_calc((char*)buf2, 8))
+			return -2;
+
+		return len;
+	}
+
+	//return no error, no data
+	if (ret == 0)
+		return 0;
+
+	//error
+	return -1;
+}
+
+int fpga2_exec_command(int fd, uint8_t cmd, uint8_t* buf)
+{
+	fpga_write(fd, &cmd, 1);
+
+	return fpga2_recv_response(fd, buf);
 }

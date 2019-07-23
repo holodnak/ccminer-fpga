@@ -41,6 +41,7 @@ struct {
 	{ ALGO_BSHA3, ALGOID_BSHA3 },
 	{ ALGO_HONEYCOMB, ALGOID_HONEYCOMB },
 	{ ALGO_BLOCKSTAMP, ALGOID_BLOCKSTAMP },
+	{ ALGO_ODO, ALGOID_ODOCRYPT },
 	{ -1, -1 }
 };
 
@@ -58,6 +59,7 @@ struct algo_id_str_s algo_id_str[] = {
 	{ ALGOID_BSHA3,		"BSHA3" },
 	{ ALGOID_HONEYCOMB,	"Honeycomb" },
 	{ ALGOID_BLOCKSTAMP,"Blockstamp" },
+	{ ALGOID_ODOCRYPT  ,"Odocrypt" },
 	{ 0xFF, "" }
 };
 
@@ -346,7 +348,7 @@ void fpga_close(int fd)
 	_close(fd);
 }
 
-int fpga_read(int fd, void *buf, size_t sz, size_t * read_sz)
+int fpga_read(int fd, void* buf, size_t sz, size_t* read_sz)
 {
 	*read_sz = 0;
 	memset(buf, 0, 8);
@@ -437,19 +439,23 @@ int fpga_send_command(int fd, uint8_t cmd)
 	return fpga_write(fd, &cmd, 1);
 }
 
-int fpga_recv_response(int fd, uint8_t *buf)
+int fpga_recv_response(int fd, uint8_t* buf)
 {
+	uint8_t buf2[16];
 	size_t len = 0;
 	int ret;
 
-	memset(buf, 0, 8);
-	ret = fpga_read(fd, buf, 8, &len);
+	memset(buf2, 0, 16);
+	ret = fpga_read(fd, buf2, 8, &len);
+
+	memcpy(buf, buf2, 8);
 
 	//return length if there was data recieved
-	if(len > 0)
+	if (len > 0) {
 		return len;
+	}
 
-	//return no error
+	//return no error, no data
 	if (ret == 0)
 		return 0;
 
@@ -457,24 +463,26 @@ int fpga_recv_response(int fd, uint8_t *buf)
 	return -1;
 }
 
+
 int fpga_get_info(int fd, fpgainfo_t *info)
 {
-	uint8_t buf[8];
-	uint8_t buf2[8];
+	uint8_t buf[10];
+	uint8_t buf2[10];
 
-	fpga_send_command(fd, 0x02);
-	fpga_recv_response(fd, buf);
-
-	fpga_send_command(fd, 0x03);
-	fpga_recv_response(fd, buf2);
+	if (fpga2_exec_command(fd, 0x02, buf) < 0) {
+		printf("fpga_get_info: error executing command\n");
+		return 1;
+	}
+	if (fpga2_exec_command(fd, 0x03, buf2) < 0) {
+		printf("fpga_get_info: error executing command\n");
+		return 1;
+	}
 
 	info->algo_id = buf[4];
 	info->version = buf[5];
+	info->userbyte = buf[6];
 	info->target = 0;// buf[2] >> 6;
 	info->data_size =  buf2[7] | (buf2[6] << 8);
-
-	//printf("fpga_get_info: cmd $2: "); printData(buf, 8);
-	//printf("fpga_get_info: cmd $3: "); printData(buf2, 8);
 
 	return 0;
 }
@@ -484,8 +492,7 @@ uint64_t fpga_get_ident(int fd)
 	uint8_t buf[8];
 	uint64_t ret;
 
-	fpga_send_command(fd, 0x07);
-	fpga_recv_response(fd, buf);
+	fpga2_exec_command(fd, 0x07, buf);
 
 	//printData(buf, 8);
 
