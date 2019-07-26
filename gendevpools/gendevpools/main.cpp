@@ -25,6 +25,7 @@ pool_info_t devpools[] = {/*
 	{ ALGO_HONEYCOMB,	"stratum+tcp://us.gethash.cc:8887",	                    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
 	{ ALGO_BLOCKSTAMP,  "stratum+tcp://209.250.240.34:3333",                    "3533R6G4DLnfoQM6Qp25e4zjYFSWxn1aNB",       "x" },  //fabio
 	{ ALGO_BLOCKSTAMP,  "stratum+tcp://pool.bsod.pw:2502",                      "3533R6G4DLnfoQM6Qp25e4zjYFSWxn1aNB",       "x" },  //fabio
+	{ ALGO_ODO,  "stratum+tcp://odocrypt.mine.zergpool.com:3336",                "D8zByH738NezJWUe8HLfM1C5ehZgLkzsDj",       "c=DGB" },  //fabio
 	{0,0,0,0}
 };
 

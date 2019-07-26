@@ -130,6 +130,7 @@ void applog(int prio, const char *fmt, ...)
 
 		len = 40 + (int) strlen(fmt) + 2;
 		f = (char*) alloca(len);
+/*
 		sprintf(f, "[%d-%02d-%02d %02d:%02d:%02d]%s %s%s\n",
 			tm.tm_year + 1900,
 			tm.tm_mon + 1,
@@ -141,6 +142,15 @@ void applog(int prio, const char *fmt, ...)
 			fmt,
 			use_colors ? CL_N : ""
 		);
+		*/
+		sprintf(f, "[%02d:%02d:%02d]%s %s%s\n",
+			tm.tm_hour,
+			tm.tm_min,
+			tm.tm_sec,
+			color,
+			fmt,
+			use_colors ? CL_N : "");
+
 		if (prio == LOG_RAW) {
 			// no time prefix, for ccminer -n
 			sprintf(f, "%s%s\n", fmt, CL_N);

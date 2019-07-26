@@ -82,7 +82,7 @@ int dump_info = 0;
 int start_clock = -1;
 int fast_clock_startup = 0;
 bool detect_sqrl = false;
-bool blank_user_agent = true;
+bool blank_user_agent = false;
 uint64_t odocrypt_current_key = 0;
 
 char active_dna[256] = "";

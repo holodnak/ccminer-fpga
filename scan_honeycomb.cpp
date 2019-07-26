@@ -210,7 +210,7 @@ extern bool less_difficult;
 extern bool more_difficult;
 
 #define NEW_DIFF_OFFSETS 1
-
+extern char active_dna[];
 int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	unsigned char wbuf[84];
@@ -372,7 +372,7 @@ int scanhash_honeycomb(int thr_id, struct work* work, uint32_t max_nonce, uint64
 
 		memset(fstr, 0, 64);
 		if (cur_freq > 0)
-			sprintf(fstr, "[%dMHz] ", cur_freq);
+			sprintf(fstr, "[%dMHz/%s] ", cur_freq,active_dna);
 
 		//		applog(LOG_INFO, "miner[%d] - VccInt: %0.2fv, Temp: %.1fC", thr_id, vint, temp);
 		if (is_acc || is_rej) {

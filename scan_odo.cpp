@@ -173,6 +173,66 @@ int scanhash_odoc(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* h
 	return 0;
 }
 
+class Thing {
+private:
+	int *arr;
+	int pos;
+	int count;
+	int max;
+public:
+	Thing(int maxcount) {
+		pos = 0;
+		count = 0;
+		max = maxcount;
+		arr = new int[max];
+	}
+	~Thing() {
+		delete[] arr;
+	}
+	void Add(int n) {
+		arr[pos++] = n;
+		if (pos == max)
+			pos = 0;
+		if (count < max) {
+			count++;
+		}
+	}
+	void Clear() {
+		pos = 0;
+		count = 0;
+	}
+	__int64 GetSum() {
+		__int64 n, i;
+
+		for (n = 0, i = 0; i < count; i++) {
+			n += (__int64)arr[i];
+		}
+		return(n);
+	}
+	int GetAvg() {
+		return(count <= 0 ? -1 : GetSum() / count);
+	}
+};
+
+class Hashrate {
+private:
+	Thing hr;
+public:
+	Hashrate(int avg_count):hr(avg_count) {
+	}
+	void Add(int n) {
+		if (n > 20000)	//cutoff, 20GH is too the limit
+			n = 20000 / 4;
+		hr.Add(n);
+	}
+	void Clear() {
+		hr.Clear();
+	}
+	int Get() {
+		return hr.GetAvg();
+	}
+};
+
 int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	uint32_t* pdata = work->data;
@@ -180,26 +240,17 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 	uint32_t hash[8], hash2[8];
 	uint32_t midstate[8];
 	uint32_t n = pdata[19] - 1;
-	const uint32_t first_nonce = bswap_32(pdata[19]);
+	const uint32_t first_nonce = pdata[19];
 	const uint32_t Htarg = ptarget[7];
 	int info_timeout;
 	uint32_t my_target[8];
 	static int megahashes = 1;
+	static Hashrate hashrate(25);
 
 	unsigned char wbuf[84];
 	uint32_t endiandata[32];
 
 	info_timeout = 60;
-
-	uint32_t my_data[20] = {
-	0x20000E02, 0xAE1AC30C, 0x8D835AEC, 0xD81B5AEF,
-	0x0FCCA528, 0xBED33E6A, 0x650DE45B, 0x00000003,
-	0x00000000, 0x76F7FD7B, 0xE8574CE3, 0x3AD74A61,
-	0x4E1F0E75, 0x41423EBA, 0x9509A745, 0x7ED3A01D,
-	0x5680B51E, 0x5D3729FE, 0x1B02DAB6, 0//0x11120000
-	};
-
-	//for (int k = 0; k < 20; k++)		be32enc(&pdata[k], my_data[k]);
 
 	for (int k = 0; k < 20; k++)
 		be32enc(&endiandata[k], pdata[k]);
@@ -239,14 +290,20 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 	//size_t len;
 	uint8_t buf[10];
 
-	//applog(LOG_INFO, "Starting nonce = %08X",first_nonce);
+	//applog(LOG_INFO, "Starting nonce = %08X", swab32(first_nonce));
 	//printf("wbuf: "); printDataFPGA(wbuf, 84);
 
 #define GC(xx,yy) (((xx) << 6) | (yy))
 #define CSOLS(xx,yy) ( thr_info[thr_id].cid_sols[ GC(xx,yy) ] )
 #define CERRS(xx,yy) ( thr_info[thr_id].cid_errs[ GC(xx,yy) ] )
+#define CSOLSs(xx,yy) (CSOLS(xx,yy) + CERRS(xx,yy))
 
-	int fivecores = CSOLS(0, 4) + CSOLS(1, 4) + CSOLS(1, 4);
+	uint32_t fivecores  = CSOLSs(0, 4) + CSOLSs(1, 4) + CSOLSs(1, 4);
+	uint32_t fourcores  = CSOLSs(0, 3) + CSOLSs(1, 3) + CSOLSs(1, 3) + fivecores;
+	uint32_t threecores = CSOLSs(0, 2) + CSOLSs(1, 2) + CSOLSs(1, 2) + fourcores;
+	uint32_t twocores = CSOLSs(0, 1) + CSOLSs(1, 1) + CSOLSs(1, 1) + threecores;
+	uint32_t onecore2 = CSOLSs(2, 0) + twocores;
+	uint32_t onecore1 = CSOLSs(1, 0) + onecore2;
 
 	while (!work_restart[thr_id].restart) {
 
@@ -270,21 +327,21 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 				applog(LOG_INFO, "     Rejected: %14d             Errors   : %14d", GetRej(), thr_info[thr_id].hw_err);
 				applog(LOG_INFO, "");
 				applog(LOG_INFO, "   Group 0:  Core 0: %8d (errors: %d)", CSOLS(0, 0), CERRS(0, 0));
-				applog(LOG_INFO, "             Core 1: %8d (errors: %d)", CSOLS(0, 1), CERRS(0, 1));
-				applog(LOG_INFO, "             Core 2: %8d (errors: %d)", CSOLS(0, 2), CERRS(0, 2));
-				applog(LOG_INFO, "             Core 3: %8d (errors: %d)", CSOLS(0, 3), CERRS(0, 3));
+				if (twocores)applog(LOG_INFO, "             Core 1: %8d (errors: %d)", CSOLS(0, 1), CERRS(0, 1));
+				if (threecores)applog(LOG_INFO, "             Core 2: %8d (errors: %d)", CSOLS(0, 2), CERRS(0, 2));
+				if (fourcores)applog(LOG_INFO, "             Core 3: %8d (errors: %d)", CSOLS(0, 3), CERRS(0, 3));
 				if (fivecores)applog(LOG_INFO, "             Core 4: %8d (errors: %d)", CSOLS(0, 3), CERRS(0, 3));
-				applog(LOG_INFO, "");
-				applog(LOG_INFO, "   Group 1:  Core 0: %8d (errors: %d)", CSOLS(1, 0), CERRS(1, 0));
-				applog(LOG_INFO, "             Core 1: %8d (errors: %d)", CSOLS(1, 1), CERRS(1, 1));
-				applog(LOG_INFO, "             Core 2: %8d (errors: %d)", CSOLS(1, 2), CERRS(1, 2));
-				applog(LOG_INFO, "             Core 3: %8d (errors: %d)", CSOLS(1, 3), CERRS(1, 3));
+				if (onecore1)applog(LOG_INFO, "");
+				if (onecore1)applog(LOG_INFO, "   Group 1:  Core 0: %8d (errors: %d)", CSOLS(1, 0), CERRS(1, 0));
+				if (twocores)applog(LOG_INFO, "             Core 1: %8d (errors: %d)", CSOLS(1, 1), CERRS(1, 1));
+				if (threecores)applog(LOG_INFO, "             Core 2: %8d (errors: %d)", CSOLS(1, 2), CERRS(1, 2));
+				if (fourcores)applog(LOG_INFO, "             Core 3: %8d (errors: %d)", CSOLS(1, 3), CERRS(1, 3));
 				if (fivecores)applog(LOG_INFO, "             Core 4: %8d (errors: %d)", CSOLS(1, 3), CERRS(1, 3));
-				applog(LOG_INFO, "");
-				applog(LOG_INFO, "   Group 2:  Core 0: %8d (errors: %d)", CSOLS(2, 0), CERRS(2, 0));
-				applog(LOG_INFO, "             Core 1: %8d (errors: %d)", CSOLS(2, 1), CERRS(2, 1));
-				applog(LOG_INFO, "             Core 2: %8d (errors: %d)", CSOLS(2, 2), CERRS(2, 2));
-				applog(LOG_INFO, "             Core 3: %8d (errors: %d)", CSOLS(2, 3), CERRS(2, 3));
+				if (onecore2)applog(LOG_INFO, "");
+				if (onecore2)applog(LOG_INFO, "   Group 2:  Core 0: %8d (errors: %d)", CSOLS(2, 0), CERRS(2, 0));
+				if (twocores)applog(LOG_INFO, "             Core 1: %8d (errors: %d)", CSOLS(2, 1), CERRS(2, 1));
+				if (threecores)applog(LOG_INFO, "             Core 2: %8d (errors: %d)", CSOLS(2, 2), CERRS(2, 2));
+				if (fourcores)applog(LOG_INFO, "             Core 3: %8d (errors: %d)", CSOLS(2, 3), CERRS(2, 3));
 				if (fivecores)applog(LOG_INFO, "             Core 4: %8d (errors: %d)", CSOLS(2, 3), CERRS(2, 3));
 				applog(LOG_INFO, "");
 				applog(LOG_INFO, "===================================================================");
@@ -367,6 +424,10 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 		double hr = ((double)thr_hashrates[thr_id]) / 1000000.0f;
 		char hr_unit = 'M';
 
+		hashrate.Add((int)hr);
+
+		hr = (double)hashrate.Get();
+
 		if (hr > 1000.0f || megahashes == 0) {
 			megahashes = 0;
 			hr /= 1000.0f;
@@ -378,11 +439,10 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 		memset(fstr, 0, 128);
 
 		if (cur_freq > 0)
-			sprintf(fstr, "[%s: %dMHz, %0.2fv, %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, vint, (int)temp, hr, hr_unit, error_pct);
+			sprintf(fstr, "[%s: %dMHz %0.2fv %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, vint, (int)temp, hr, hr_unit, error_pct);
 		else
-			sprintf(fstr, "[%s: %0.2fv, %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, vint, (int)temp, hr, hr_unit, error_pct);
+			sprintf(fstr, "[%s: %0.2fv %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, vint, (int)temp, hr, hr_unit, error_pct);
 
-		//		applog(LOG_INFO, "miner[%d] - VccInt: %0.2fv, Temp: %.1fC", thr_id, vint, temp);
 		if (is_acc || is_rej) {
 			if (is_rej)
 				applog(LOG_INFO, "%s" CL_LRD " Share %s." CL_N "", fstr, "Rejected");
@@ -399,27 +459,30 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 
 		//nonce = swab32(nonce);// -89;
 
-		*hashes_done = (uint64_t)(nonce - first_nonce) & 0xFFFFFFFFULL;
+		if(swab32(nonce) > swab32(first_nonce))
+			* hashes_done = (uint64_t)(swab32(nonce) - swab32(first_nonce)) & 0xFFFFFFFFULL;
+
+		//???
+		else
+			*hashes_done = (uint64_t)(swab32(first_nonce) - swab32(nonce)) & 0xFFFFFFFFULL;
+
+		//applog(LOG_INFO, CL_LGR "Nonce = %08X (first_nonce = %08x, hashes_done = %lld", swab32(nonce), swab32(first_nonce), *hashes_done);
 
 		if (nonce == 0xFFFFFFFF) {
-			applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d", fstr, GetAcc(), GetRej(), thr_info[thr_id].solutions - thr_info[thr_id].hw_err, thr_info[thr_id].hw_err);
+			applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d", fstr, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
 			pdata[19] = nonce;// +0x10000;
 			//applog(LOG_INFO, "No Nonce Found - %08X (first_nonce = %08X)", nonce, first_nonce);
 			return 0;
 		}
-
-		thr_info[thr_id].solutions++;
 
 		memcpy(&work->nonces[0], &nonce, 4);
 
 		if (opt_debug)
 			applog(LOG_INFO, "miner[%d] Nonce Found = %08X", thr_id, nonce);
 
-		//TODO: fix the 'waiting' flag in the bitstream!
-		
 		uint32_t hash_test[32];
 
-		pdata[19] = nonce;
+		pdata[19] = nonce;//not swapped!!
 
 		for (int l = 0; l < 20; l++)
 			be32enc(&endiandata[l], pdata[l]);
@@ -444,8 +507,10 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 			return 0;
 		}
 
+		thr_info[thr_id].solutions++;
+		thr_info[thr_id].cid_sols[cid]++;
+
 		if (fulltest(hash_test, work->target) == 0) {
-			thr_info[thr_id].cid_sols[cid]++;
 			applog(LOG_INFO, "%s" CL_YL2 " Solution Found, core %s" CL_N "", fstr, make_coreid(cid));
 			return 0;
 		}
@@ -458,9 +523,8 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 		return 0;
 	}
 
-	*hashes_done = n - first_nonce + 1;
+	*hashes_done = 0;
 	pdata[19] = n;
 	return 0;
-
 
 }

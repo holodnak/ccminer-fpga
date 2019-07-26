@@ -76,6 +76,7 @@ enum sha_algos {
 	ALGO_WHIRLPOOL,
 	ALGO_WHIRLPOOLX,
 	ALGO_WILDKECCAK,
+	ALGO_ZENPROTO,
 	ALGO_ZR5,
 	ALGO_AUTO,
 	ALGO_COUNT
@@ -155,6 +156,7 @@ static const char *algo_names[] = {
 	"whirlpool",
 	"whirlpoolx",
 	"wildkeccak",
+	"zenprotocol",
 	"zr5",
 	"auto", /* reserved for multi algo */
 	""
@@ -209,6 +211,8 @@ static inline int algo_to_int(char* arg)
 			i = ALGO_SHA256D;
 		else if (!strcasecmp("htmlcoin", arg))
 			i = ALGO_HTML;
+		else if (!strcasecmp("zp", arg))
+			i = ALGO_ZENPROTO;
 		else if (!strcasecmp("sha256", arg))
 			i = ALGO_SHA256D;
 		else if (!strcasecmp("thorsriddle", arg))

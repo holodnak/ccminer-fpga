@@ -277,6 +277,9 @@
     </ClCompile>
     <ClCompile Include="odo\KeccakP-800-reference.c" />
     <ClCompile Include="odo\odocrypt.cpp" />
+    <ClCompile Include="scan_zp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">
