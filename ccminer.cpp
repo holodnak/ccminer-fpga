@@ -2920,14 +2920,17 @@ static void *miner_thread(void *userdata)
 			break;
 
 		case ALGO_HONEYCOMB:
-			if(opt_algo_version == 2)
+			if (opt_algo_version == 2)
 				rc = scanhash_honeycomb_v2(thr_id, &work, max_nonce, &hdone64);
 			else
 				rc = scanhash_honeycomb(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 		case ALGO_BSHA3:
-			rc = scanhash_bsha3(thr_id, &work, max_nonce, &hdone64);
+			if (opt_algo_version == 2)
+				rc = scanhash_bsha3_v2(thr_id, &work, max_nonce, &hdone64);
+			else
+				rc = scanhash_bsha3(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 		case ALGO_BLOCKSTAMP:
@@ -4635,6 +4638,11 @@ int main(int argc, char *argv[])
 
 	if (opt_algo == ALGO_HONEYCOMB && fpga2_get_device_version(pp) == 2) {
 		printf("FPGA has Honeycomb v2 bitstream.\n");
+		opt_algo_version = 2;
+	}
+
+	if (opt_algo == ALGO_BSHA3 && fpga2_get_device_version(pp) == 2) {
+		printf("FPGA has BSHA3 v2 bitstream.\n");
 		opt_algo_version = 2;
 	}
 

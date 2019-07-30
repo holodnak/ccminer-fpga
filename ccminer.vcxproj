@@ -790,7 +790,6 @@
     <ClCompile Include="scan_sha256d.cpp" />
     <ClCompile Include="scan_skein2.cpp" />
     <ClCompile Include="scan_tribus.cpp" />
-    <ClCompile Include="scan_zp.cpp" />
     <ClCompile Include="serial.cpp" />
     <ClCompile Include="util.cpp" />
     <ClCompile Include="bench.cpp" />
