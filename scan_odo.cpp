@@ -233,6 +233,8 @@ public:
 	}
 };
 
+extern bool opt_discover_key;
+
 int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	uint32_t* pdata = work->data;
@@ -298,8 +300,8 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 #define CERRS(xx,yy) ( thr_info[thr_id].cid_errs[ GC(xx,yy) ] )
 #define CSOLSs(xx,yy) (CSOLS(xx,yy) + CERRS(xx,yy))
 
-	uint32_t fivecores  = CSOLSs(0, 4) + CSOLSs(1, 4) + CSOLSs(1, 4);
-	uint32_t fourcores  = CSOLSs(0, 3) + CSOLSs(1, 3) + CSOLSs(1, 3) + fivecores;
+	uint32_t fivecores = CSOLSs(0, 4) + CSOLSs(1, 4) + CSOLSs(1, 4);
+	uint32_t fourcores = CSOLSs(0, 3) + CSOLSs(1, 3) + CSOLSs(1, 3) + fivecores;
 	uint32_t threecores = CSOLSs(0, 2) + CSOLSs(1, 2) + CSOLSs(1, 2) + fourcores;
 	uint32_t twocores = CSOLSs(0, 1) + CSOLSs(1, 1) + CSOLSs(1, 1) + threecores;
 	uint32_t onecore2 = CSOLSs(2, 0) + twocores;
@@ -403,7 +405,7 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 		if (thr_info[thr_id].solutions == 0)
 			error_pct = 0;
 		else
-			error_pct = (double)thr_info[thr_id].hw_err / (double)thr_info[thr_id].solutions * 100.0f;
+			error_pct = (double)thr_info[thr_id].hw_err / (double)(thr_info[thr_id].solutions + thr_info[thr_id].hw_err) * 100.0f;
 
 		double vint, temp;
 
@@ -457,9 +459,12 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 
 		memcpy((char*)& nonce, buf, 4);
 
+		//version 2
+		nonce = (nonce << 16) | (nonce >> 16);
+
 		//nonce = swab32(nonce);// -89;
 
-		if(swab32(nonce) > swab32(first_nonce))
+		if (swab32(nonce) > swab32(first_nonce))
 			* hashes_done = (uint64_t)(swab32(nonce) - swab32(first_nonce)) & 0xFFFFFFFFULL;
 
 		//???
@@ -528,3 +533,610 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 	return 0;
 
 }
+
+
+
+int scanhash_odo2(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+{
+	uint32_t* pdata = work->data;
+	uint32_t* ptarget = work->target;
+	uint32_t hash[8], hash2[8];
+	uint32_t midstate[8];
+	uint32_t n = pdata[19] - 1;
+	const uint32_t first_nonce = pdata[19];
+	const uint32_t Htarg = ptarget[7];
+	int info_timeout;
+	uint32_t my_target[8];
+	static int megahashes = 1;
+	static Hashrate hashrate(25);
+
+	unsigned char wbuf[84];
+	uint32_t endiandata[32];
+
+	info_timeout = 60;
+
+	for (int k = 0; k < 20; k++)
+		be32enc(&endiandata[k], pdata[k]);
+
+	less_difficult = true;
+	memcpy(my_target, work->target, 32);
+	my_target[7] = 0x0000000F;
+	my_target[6] = 0x7FFFFFFF;
+	if (less_difficult)
+		my_target[6] = 0xFFFFFFFF;
+	else if (more_difficult)
+		my_target[6] = 0x3FFFFFFF;
+
+	memcpy(wbuf, endiandata, 80);
+	memcpy(wbuf + 80, ((unsigned char*)& my_target[7]), 4);
+
+	//bswap target
+	bswap(wbuf + 80, 4);
+
+	//reverse and bswap data (not nonce)
+	//bswap(wbuf, 76);
+	reverse(wbuf, 76);
+
+	//bswap nonce
+	bswap(wbuf + 76, 4);
+
+	struct timeval tv_start, elapsed, tv_end;
+	int ret;
+
+	fpga_send_data(thr_info[thr_id].fd, wbuf, 84);
+
+	elapsed.tv_sec = 0;
+	elapsed.tv_usec = 0;
+	cgtime(&tv_start);
+
+	//size_t len;
+	uint8_t buf[10];
+
+	//applog(LOG_INFO, "Starting nonce = %08X", swab32(*((uint32_t*)(wbuf + 76))));
+	//printf("wbuf: "); printDataFPGA(wbuf, 84);
+
+#define GC(xx,yy) (((xx) << 6) | (yy))
+#define CSOLS(xx,yy) ( thr_info[thr_id].cid_sols[ GC(xx,yy) ] )
+#define CERRS(xx,yy) ( thr_info[thr_id].cid_errs[ GC(xx,yy) ] )
+#define CSOLSs(xx,yy) (CSOLS(xx,yy) + CERRS(xx,yy))
+
+	uint32_t fivecores = CSOLSs(0, 4) + CSOLSs(1, 4) + CSOLSs(1, 4);
+	uint32_t fourcores = CSOLSs(0, 3) + CSOLSs(1, 3) + CSOLSs(1, 3) + fivecores;
+	uint32_t threecores = CSOLSs(0, 2) + CSOLSs(1, 2) + CSOLSs(1, 2) + fourcores;
+	uint32_t twocores = CSOLSs(0, 1) + CSOLSs(1, 1) + CSOLSs(1, 1) + threecores;
+	uint32_t onecore2 = CSOLSs(2, 0) + twocores;
+	uint32_t onecore1 = CSOLSs(1, 0) + onecore2;
+
+	int start = time(0) - 3;
+
+	static char str_health[128];
+	static double vint = 0, temp = 0;
+
+	sprintf(str_health, "[%s: %dMHz %.0fC %.2fV]", active_dna, cur_freq, temp, vint);
+
+	while (!work_restart[thr_id].restart) {
+
+		int now = time(0);
+
+		int r2 = fpga_freq_check_keys(thr_info[thr_id].fd);
+
+		memset(buf, 0, 8);
+
+		//read response from fpga
+		ret = fpga2_recv_response(thr_info[thr_id].fd, buf);
+
+		cgtime(&tv_end); timersub(&tv_end, &tv_start, &elapsed);
+
+		if (ret == 0) {		// No Nonce Found
+			if ((now - start) >= 3) {
+				//LOG_INFO("updating temp/vint. (now=%d, start=%d, diff=%d)", now, start, now - start);
+				uint8_t cmd = 0x01;
+
+				//check = now;
+				//fpga_get_health(fd, &temp, &vint);
+
+				/* the following is a nasty kludge due to not having a
+				   packet ID in the data returned from the FPGA.  the packet
+				   could be a valid nonce, or the response of the "get health"
+				   command.  to work around this, the first 40 bits of the
+				   "get health" response are currently zero, so we check for that.
+				*/
+
+				//write "get health" command
+				fpga_write(thr_info[thr_id].fd, &cmd, 1);
+
+				//consumeJob();
+				start = time(0);
+				//break;
+			}
+
+			if (elapsed.tv_sec > info_timeout) {
+				applog(LOG_ERR, "End Scan For Nonces - Time = %d sec", elapsed.tv_sec);
+				//thr->work_restart = true;
+				break;
+			}
+
+			continue;
+		}
+
+		else if (ret == -1) {
+			applog(LOG_ERR, "Serial Read Error (ret=%d), need to exit.", ret);
+			Sleep(2000);
+			//serial_fpga_close(thr);
+			//dev_error(serial_fpga, REASON_DEV_COMMS_ERROR);
+			break;
+		}
+
+		else if (ret == -2) {
+			size_t len2 = 0;
+			applog(LOG_ERR, "Serial CRC Error.");
+			thr_info[thr_id].crc_err++;
+			char buf2[1024];
+			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
+			Sleep(1000);
+			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
+			Sleep(1000);
+			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
+			break;
+		}
+
+
+		bool is_health = (buf[0] == 0) && (buf[1] == 0) && (buf[2] == 0) && (buf[3] == 0) && (buf[4] == 0);
+
+		double hr = ((double)thr_hashrates[thr_id]) / 1000000.0f;
+		char hr_unit = 'M';
+
+		hashrate.Add((int)hr);
+
+		hr = (double)hashrate.Get();
+
+		if (hr > 1000.0f || megahashes == 0) {
+			megahashes = 0;
+			hr /= 1000.0f;
+			hr_unit = 'G';
+		}
+
+		if (is_health) {
+			uint32_t vv, tt;
+
+			vv = ((buf[7] << 0) | ((buf[6] & 0x0F) << 8)) << 4;
+			tt = ((buf[5] << 4) | ((buf[6] & 0xF0) >> 4)) << 4;
+			vint = ((double)vv) / 65536.0f * 3.0f;
+			temp = (((double)tt) * 509.3140064f / 65536.0f) - 280.23087870f;
+
+			{
+				//double hr_gh = Workers::GetHr10() / 1000000000.0f;
+
+				sprintf(str_health, "[%s: %dMHz %.0fC %.2fV]", active_dna, cur_freq, temp, vint);
+				//if (strlen(str_hashrate) > 0)
+				//applog(LOG_INFO, "%s " CL_CYN "%3.1f %cH/s " CL_LCY " Acc/Rej: %d/%d  Sol/Err: %d/%d", str_health, hr, hr_unit, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			}
+
+			//sprintf(str_health, "[%s: %dMHz %.0fC %.2fV]", dna, cur_freq, temp, vint);
+			//if (strlen(str_hashrate) > 0)
+			//	applog(LOG_INFO, "%s %s" CL_LCY " Acc/Rej: %d/%d  Sol/Err: %d/%d", str_health, str_hashrate, accepted, rejected, solutions, errors);
+			continue;
+		}
+
+		//printf("recv: "); printDataFPGA(buf, 8);
+
+		double error_pct;
+
+		if (thr_info[thr_id].solutions == 0)
+			error_pct = 0;
+		else
+			error_pct = (double)thr_info[thr_id].hw_err / (double)(thr_info[thr_id].solutions + thr_info[thr_id].hw_err) * 100.0f;
+
+
+		if (is_acc || is_rej) {
+			if (is_rej)
+				applog(LOG_INFO, "%s" CL_LRD " Share %s." CL_N "", str_health, "Rejected");
+			else
+				applog(LOG_INFO, "%s" CL_GR2 " Share %s." CL_N "", str_health, "Accepted");
+		}
+
+		is_acc = 0;
+		is_rej = 0;
+
+		uint32_t nonce;
+
+		memcpy((char*)& nonce, buf+4, 4);
+
+		//version 2
+		//nonce = (nonce << 16) | (nonce >> 16);
+
+		//nonce = swab32(nonce);// -89;
+
+		if (swab32(nonce) > swab32(first_nonce))
+			* hashes_done = (uint64_t)(swab32(nonce) - swab32(first_nonce)) & 0xFFFFFFFFULL;
+
+		//???
+		else
+			*hashes_done = (uint64_t)(swab32(first_nonce) - swab32(nonce)) & 0xFFFFFFFFULL;
+
+		//applog(LOG_INFO, CL_LGR "Nonce = %08X (first_nonce = %08x, hashes_done = %lld", swab32(nonce), swab32(first_nonce), *hashes_done);
+
+		if (nonce == 0xFFFFFFFF) {
+			applog(LOG_INFO, "%s " CL_CYN "%3.1f %cH/s "  CL_N "Err: %.1f%% " CL_LCY " Acc/Rej: %d/%d  Sol/Err: %d/%d", str_health, hr, hr_unit, error_pct, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			//applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d", str_health, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			pdata[19] = nonce;// +0x10000;
+			//applog(LOG_INFO, "No Nonce Found - %08X (first_nonce = %08X)", nonce, first_nonce);
+			return 0;
+		}
+
+		memcpy(&work->nonces[0], &nonce, 4);
+
+		if (opt_debug)
+			applog(LOG_INFO, "miner[%d] Nonce Found = %08X", thr_id, nonce);
+
+		uint32_t hash_test[32];
+
+		pdata[19] = nonce;//not swapped!!
+
+		for (int l = 0; l < 20; l++)
+			be32enc(&endiandata[l], pdata[l]);
+
+		odo_hash(hash_test, endiandata, odocrypt_current_key);
+		//printf("hash: "); printDataFPGA(hash_test, 32);
+
+		//check for bad nonce
+		if (fulltest(hash_test, my_target) == 0) {
+			thr_info[thr_id].hw_err++;
+			//applog(LOG_INFO, "%sV: %0.2fv, T: %dc, Err: %.1f%% " CL_CYN "%.1f GH/s" CL_LRD " Hardware Error, core %s" CL_N "", fstr, vint, (int)temp, error_pct, hr, make_coreid(cid));
+
+			if (detect_sqrl && ((rand() & 0x7) == 0)) {
+				double fah = temp * 9.0f / 5.0f + 32;
+				//applog(LOG_INFO, "%sV: %0.2fv, T: %dc, Err: %.1f%% " CL_CYN "%.1f GH/s" CL_LRD " Squirrel Detected, core %s" CL_N "", fstr, vint, (int)temp, error_pct, hr, make_coreid(cid));
+				applog(LOG_INFO, "%s" CL_LRD " Squirrel Detected" CL_N "", str_health);
+			}
+			else {
+				applog(LOG_INFO, "%s" CL_LRD " Hardware Error" CL_N "", str_health);
+			}
+
+			return 0;
+		}
+
+		thr_info[thr_id].solutions++;
+
+		if (fulltest(hash_test, work->target) == 0) {
+			applog(LOG_INFO, "%s" CL_YL2 " Solution Found" CL_N "", str_health);
+			return 0;
+		}
+		else {
+			//applog(LOG_INFO, "%s" CL_LBL " Share Found" CL_N "", str_health);
+			work->nonces[0] = pdata[19];
+			return 1;
+		}
+
+		return 0;
+	}
+
+	*hashes_done = 0;
+	pdata[19] = n;
+	return 0;
+
+}
+
+/*
+
+
+int scanhash_odo2(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+{
+	uint32_t* pdata = work->data;
+	uint32_t* ptarget = work->target;
+	uint32_t hash[8], hash2[8];
+	uint32_t n = pdata[19] - 1;
+	const uint32_t first_nonce = pdata[19];
+	const uint32_t Htarg = ptarget[7];
+	int info_timeout;
+	uint32_t my_target[8];
+	static int megahashes = 1;
+	static Hashrate hashrate(25);
+	unsigned char wbuf[84];
+	uint32_t endiandata[32];
+
+	unsigned char midstate[64];
+
+	info_timeout = 60;
+
+	for (int k = 0; k < 20; k++)
+		be32enc(&endiandata[k], pdata[k]);
+	memcpy(&endiandata, pdata, 32);
+
+
+	///////////////////////////////////////////////
+
+	unsigned int data[] = {
+
+	0xd5a74fba,
+	0x920ad0d3,
+	0x5ec5726f,
+	0x26327547,
+
+	0xcbc82180,
+	0xe356e5cc,
+	0xf6cf2e6b,
+	0xd75f8a66,
+
+	0x00c904bd,
+	0x00000000,
+	0x00000000,
+	0x00114026,
+
+	0x0000FFFF
+
+	};
+
+	bswap((unsigned char*)data, 12 * 4);
+
+	//memcpy(&endiandata, data, 32);
+
+
+
+	///////////////////////////////////////////
+
+
+
+	less_difficult = true;
+	memcpy(my_target, work->target, 32);
+	reverse((unsigned char*)my_target, 32);
+	my_target[7] = 0;
+	my_target[0] = 0;
+	my_target[6] = 0x7FFFFFFF;
+	if (less_difficult)
+		my_target[6] = 0xFFFFFFFF;
+	else if (more_difficult)
+		my_target[6] = 0x3FFFFFFF;
+
+
+	unsigned char mid[64];
+
+	memcpy(wbuf, endiandata, 32);
+	//reverse(wbuf, 32);
+	EaglesongHash_Mid(mid, (unsigned char*)wbuf, 32);
+
+	//printf("mids: "); printDataFPGA(mid, 64);
+	//printDataFPGA(endiandata, 32);
+	//printDataFPGA(my_target, 32);
+
+	uint8_t cmd = 0x01;
+	fpga_write(thr_info[thr_id].fd, &cmd, 1);
+
+	reverse(mid, 64);
+
+	memset(wbuf, 0, 84);
+	memcpy(wbuf, mid, 64);
+	memcpy(wbuf + 64, ((uint8_t*)endiandata) + 32, 16);
+	memcpy(wbuf + 80, &my_target[7], 4);
+
+	wbuf[67] = work->xnonce2[3];
+	wbuf[66] = work->xnonce2[2];
+	wbuf[65] = work->xnonce2[1];
+	wbuf[64] = work->xnonce2[0];
+
+	wbuf[71] = (char)rand();
+	wbuf[70] = (char)rand();
+	wbuf[69] = (char)rand();
+	wbuf[68] = (char)rand();
+
+
+	struct timeval tv_start, elapsed, tv_end;
+	int ret;
+
+	fpga_send_data(thr_info[thr_id].fd, wbuf, 84);
+
+	elapsed.tv_sec = 0;
+	elapsed.tv_usec = 0;
+	cgtime(&tv_start);
+
+	//size_t len;
+	uint8_t buf[10];
+
+	//applog(LOG_INFO, "Starting nonce = %08X", swab32(first_nonce));
+	//printf("wbuf: "); printDataFPGA(wbuf, 84);
+	//printf("tart: "); printDataFPGA(work->target, 32);
+
+#define GC(xx,yy) (((xx) << 6) | (yy))
+#define CSOLS(xx,yy) ( thr_info[thr_id].cid_sols[ GC(xx,yy) ] )
+#define CERRS(xx,yy) ( thr_info[thr_id].cid_errs[ GC(xx,yy) ] )
+#define CSOLSs(xx,yy) (CSOLS(xx,yy) + CERRS(xx,yy))
+
+	uint32_t fivecores = CSOLSs(0, 4) + CSOLSs(1, 4) + CSOLSs(1, 4);
+	uint32_t fourcores = CSOLSs(0, 3) + CSOLSs(1, 3) + CSOLSs(1, 3) + fivecores;
+	uint32_t threecores = CSOLSs(0, 2) + CSOLSs(1, 2) + CSOLSs(1, 2) + fourcores;
+	uint32_t twocores = CSOLSs(0, 1) + CSOLSs(1, 1) + CSOLSs(1, 1) + threecores;
+	uint32_t onecore2 = CSOLSs(2, 0) + twocores;
+	uint32_t onecore1 = CSOLSs(1, 0) + onecore2;
+
+	while (!work_restart[thr_id].restart) {
+
+		//////////////////////////////////////////////////
+
+		int r2 = fpga_freq_check_keys(thr_info[thr_id].fd);
+
+		if (r2) {
+			r2 = tolower(r2);
+			switch (r2) {
+			case 'c':
+				thr_info[thr_id].hw_err = 0;
+				thr_info[thr_id].solutions = 0;
+				thr_hashrates[thr_id] = 0;
+				applog(LOG_INFO, "Clearing solutions/errors.");
+				break;
+			}
+		}
+
+		//////////////////////////////////////////////////
+
+		memset(buf, 0, 8);
+
+		//read response from fpga
+		ret = fpga2_recv_response(thr_info[thr_id].fd, buf);
+
+		cgtime(&tv_end); timersub(&tv_end, &tv_start, &elapsed);
+
+		//if(elapsed.tv_sec > 4)
+		//	fpga_write(fd, &cmd, 1);
+
+		if (elapsed.tv_sec > info_timeout) {
+			applog(LOG_ERR, "End Scan For Nonces - Time = %d sec", elapsed.tv_sec);
+			//thr->work_restart = true;
+			break;
+		}
+
+		if (ret == 0) {		// No Nonce Found
+			continue;
+		}
+
+		else if (ret == -1) {
+			applog(LOG_ERR, "Serial Read Error (ret=%d), need to exit.", ret);
+			Sleep(2000);
+			//serial_fpga_close(thr);
+			//dev_error(serial_fpga, REASON_DEV_COMMS_ERROR);
+			break;
+		}
+
+		else if (ret == -2) {
+			size_t len2 = 0;
+			applog(LOG_ERR, "Serial CRC Error.");
+			thr_info[thr_id].crc_err++;
+			char buf2[1024];
+			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
+			Sleep(1000);
+			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
+			//Sleep(1000);
+			//fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
+			break;
+		}
+
+		bool is_health = (buf[0] == 0) && (buf[1] == 0) && (buf[2] == 0) && (buf[3] == 0) && (buf[4] == 0);
+
+		//printData(buf, 8);
+
+		double error_pct;
+
+		if (thr_info[thr_id].solutions == 0)
+			error_pct = 0;
+		else
+			error_pct = (double)thr_info[thr_id].hw_err / (double)thr_info[thr_id].solutions * 100.0f;
+
+		static double vint = 0, temp = 0;
+
+		double hr = ((double)thr_hashrates[thr_id]) / 1000000.0f;
+		char hr_unit = 'M';
+
+		hashrate.Add((int)hr);
+
+		hr = (double)hashrate.Get();
+
+		if (hr > 1000.0f || megahashes == 0) {
+			megahashes = 0;
+			hr /= 1000.0f;
+			hr_unit = 'G';
+		}
+
+		char fstr[128];
+
+		memset(fstr, 0, 128);
+
+		if (cur_freq > 0)
+			sprintf(fstr, "[%s: %dMHz %dc %0.2fV] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
+		else
+			sprintf(fstr, "[%s: %0.2fv %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, vint, (int)temp, hr, hr_unit, error_pct);
+
+		if (is_acc || is_rej) {
+			if (is_rej)
+				applog(LOG_INFO, "%s" CL_LRD " Share %s." CL_N "", fstr, "Rejected");
+			else
+				applog(LOG_INFO, "%s" CL_GR2 " Share %s." CL_N "", fstr, "Accepted");
+			is_acc = 0;
+			is_rej = 0;
+		}
+
+		if (is_health) {
+			uint32_t vv, tt;
+
+			vv = ((buf[7] << 0) | ((buf[6] & 0x0F) << 8)) << 4;
+			tt = ((buf[5] << 4) | ((buf[6] & 0xF0) >> 4)) << 4;
+			vint = ((double)vv) / 65536.0f * 3.0f;
+			temp = (((double)tt) * 509.3140064f / 65536.0f) - 280.23087870f;
+
+			char str_health[128];
+
+			sprintf(str_health, "[%s: %dMHz %.0fC %.2fV]", active_dna, cur_freq, temp, vint);
+			//if (strlen(str_hashrate) > 0)
+			applog(LOG_INFO, "%s " CL_CYN "%3.1f %cH/s " CL_LCY " Acc/Rej: %d/%d  Sol/Err: %d/%d", str_health, hr, hr_unit, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			continue;
+		}
+
+
+
+		uint64_t nonce;
+
+		memcpy((char*)& nonce, buf, 8);
+
+		//nonce -= 18;
+
+
+		memcpy(&work->nonces[0], &nonce, 4);
+		memcpy(&work->nonces2[0], ((uint8_t*)& nonce) + 4, 4);
+		memcpy(&work->nonces[1], ((unsigned char*)wbuf) + 68, 4);
+		//reverse((unsigned char*)& nonce, 8);
+
+		memcpy(wbuf, endiandata, 32);
+		memcpy(wbuf + 40, &nonce, 8);
+
+		wbuf[35] = work->xnonce2[3];
+		wbuf[34] = work->xnonce2[2];
+		wbuf[33] = work->xnonce2[1];
+		wbuf[32] = work->xnonce2[0];
+
+		wbuf[39] = wbuf[71];
+		wbuf[38] = wbuf[70];
+		wbuf[37] = wbuf[69];
+		wbuf[36] = wbuf[68];
+
+		if (nonce == 0xFFFFFFFFFFFFFFFFLL) {
+			//applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d", fstr, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			//pdata[19] = nonce;// +0x10000;
+			//applog(LOG_INFO, "No Nonce Found - %08X (first_nonce = %08X)", nonce, first_nonce);
+			*hashes_done = 0xFFFFFFFFLL * 6LL;  //
+			return 0;
+		}
+
+
+		if (!validate_eagle_hash((unsigned char*)wbuf, 48, my_target)) {
+			//hashes += (unsigned int)(nonce & 0xFFFFFFFFLL);
+			//valid = 1;
+			*hashes_done = nonce;
+			thr_info[thr_id].hw_err++;
+			applog(LOG_WARNING, "hardware error");
+			printData(buf, 8);
+			//return 1;
+		}
+
+		else {
+
+			thr_info[thr_id].solutions++;
+			memcpy(my_target, work->target, 32);
+			reverse((unsigned char*)my_target, 32);
+
+			//if (validate_eagle((uint8_t*)wbuf, (uint32_t*)& nonce, (uint8_t*)my_target)) {
+			if (validate_eagle_hash((unsigned char*)wbuf, 48, my_target)) {
+				*hashes_done = nonce;
+				//applog(LOG_INFO, "its valid!!");
+				return 1;
+			}
+			//else
+			//	applog(LOG_WARNING, "share found");
+		}
+
+		return 0;
+	}
+
+	*hashes_done = 0;
+	pdata[19] = n;
+	return 0;
+
+}
+*/

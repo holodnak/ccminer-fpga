@@ -22,7 +22,7 @@
 #include "serial.h"
 #include "algos.h"
 
-#define MAX_COM_PORT 128   //256 is the max
+#define MAX_COM_PORT 256
 
 uint8_t* fpga2_find_com_ports2(uint8_t* ret)
 {
@@ -187,8 +187,9 @@ int fpga2_recv_response(int fd, uint8_t* buf)
 	size_t len = 0;
 	int ret;
 
-	memset(buf2, 0, 16);
 	ret = fpga_read(fd, buf2, 10, &len);
+
+	//printData(buf2, 10);
 
 	memcpy(buf, buf2, 8);
 
@@ -197,8 +198,10 @@ int fpga2_recv_response(int fd, uint8_t* buf)
 		uint16_t crc = buf2[9] | (buf2[8] << 8);
 
 		//detect crc errors
-		if (crc != fpga2_crc_calc((char*)buf2, 8))
-			return -2;
+		if (crc != fpga2_crc_calc((char*)buf, 8)) {
+			printf("fpga2_recv_response: crc error: want %04X, got %04X\n",crc, fpga2_crc_calc((char*)buf, 8));
+			//return -2;
+		}
 
 		return len;
 	}

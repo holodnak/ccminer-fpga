@@ -7,6 +7,10 @@ extern "C" {
 }
 
 
+extern "C" {
+	extern int use_bsha3;
+}
+
 extern "C" int noise;
 
 int smaller_diff = 1;
@@ -32,6 +36,8 @@ void bsha3_hash(void* state, const void* input)
 
 	//noise = 1;
 
+	use_bsha3 = 1;
+
 	sph_keccak256_init(&ctx_keccak);
 	sph_keccak256(&ctx_keccak, input, 80);
 	sph_keccak256_close(&ctx_keccak, (void*)buffer);
@@ -42,6 +48,8 @@ void bsha3_hash(void* state, const void* input)
 	sph_keccak256(&ctx_keccak, buffer, 32);
 	sph_keccak256_close(&ctx_keccak, (void*)hash);
 
+	use_bsha3 = 0;
+
 	//noise = 0;
 
 	//printf("keccak hash2:\n\n");printData(hash, 32);
@@ -49,15 +57,22 @@ void bsha3_hash(void* state, const void* input)
 	memcpy(state, hash, 32);
 }
 
-int scanhash_bsha3p(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+int scanhash_bsha3cpu(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
+int scanhash_bsha3c(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
+{
+
+	return scanhash_bsha3cpu(thr_id, work, max_nonce, hashes_done);
+}
+
+int scanhash_bsha3cpu(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
 	uint32_t _ALIGN(128) hash32[8];
 	uint32_t _ALIGN(128) endiandata[20];
 	uint32_t* pdata = work->data;
 	uint32_t* ptarget = work->target;
 
-	ptarget[7] = 0x0000fff;
-	ptarget[6] = 0xffffffff;
+	//ptarget[7] = 0x0000fff;
+	//ptarget[6] = 0xffffffff;
 
 	uint32_t n = pdata[19] - 1;
 	const uint32_t first_nonce = pdata[19];
@@ -91,10 +106,7 @@ int scanhash_bsha3p(int thr_id, struct work* work, uint32_t max_nonce, uint64_t*
 			printDataFPGA(pdata, 80);
 			printf("\n\n");
 
-			system("pause");
-
-
-
+			//system("pause");
 
 			work_set_target_ratio(work, hash32);
 			pdata[19] = n;
@@ -375,9 +387,6 @@ public:
 
 extern bool less_difficult, more_difficult, detect_sqrl;
 extern char active_dna[];
-extern "C" {
-	extern int use_bsha3;
-}
 
 int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
@@ -401,7 +410,7 @@ int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_
 	for (int k = 0; k < 20; k++)
 		be32enc(&endiandata[k], pdata[k]);
 
-	less_difficult = true;
+	more_difficult = true;
 	memcpy(my_target, work->target, 32);
 	my_target[7] = 0;
 	my_target[6] = 0x7FFFFFFF;
@@ -536,10 +545,7 @@ int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_
 			applog(LOG_ERR, "Serial CRC Error.");
 			thr_info[thr_id].crc_err++;
 			char buf2[1024];
-			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
-			Sleep(1000);
-			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
-			Sleep(1000);
+			fpga_send_data(thr_info[thr_id].fd, wbuf, 84);
 			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
 			break;
 		}
@@ -584,10 +590,10 @@ int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_
 
 		memset(fstr, 0, 128);
 
-		if (cur_freq > 0)
+		//if (cur_freq > 0)
 			sprintf(fstr, "[%s: %dMHz %0.2fv %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, vint, (int)temp, hr, hr_unit, error_pct);
-		else
-			sprintf(fstr, "[%s: %0.2fv %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, vint, (int)temp, hr, hr_unit, error_pct);
+		//else
+		//	sprintf(fstr, "[%s: %0.2fv %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, vint, (int)temp, hr, hr_unit, error_pct);
 
 		if (is_acc || is_rej) {
 			if (is_rej)
@@ -605,12 +611,12 @@ int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_
 
 		nonce = swab32(nonce);// -89;
 
-		if (swab32(nonce) > swab32(first_nonce))
-			* hashes_done = (uint64_t)(swab32(nonce) - swab32(first_nonce)) & 0xFFFFFFFFULL;
+		if ((nonce) > (first_nonce))
+			* hashes_done = (uint64_t)((nonce) - (first_nonce)) & 0xFFFFFFFFULL;
 
 		//???
 		else
-			*hashes_done = (uint64_t)(swab32(first_nonce) - swab32(nonce)) & 0xFFFFFFFFULL;
+			*hashes_done = (uint64_t)((first_nonce) - (nonce)) & 0xFFFFFFFFULL;
 
 		//applog(LOG_INFO, CL_LGR "Nonce = %08X (first_nonce = %08x, hashes_done = %lld", swab32(nonce), swab32(first_nonce), *hashes_done);
 
@@ -634,8 +640,10 @@ int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_
 			be32enc(&endiandata[l], pdata[l]);
 
 		use_bsha3 = 1;
-		//odo_hash(hash_test, endiandata, odocrypt_current_key);
+
 		bsha3_hash(hash_test, endiandata);
+
+		//printf("hash: "); printDataFPGA(hash_test, 32);
 
 		use_bsha3 = 0;
 
@@ -645,7 +653,7 @@ int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_
 			thr_info[thr_id].cid_errs[cid]++;
 			//applog(LOG_INFO, "%sV: %0.2fv, T: %dc, Err: %.1f%% " CL_CYN "%.1f GH/s" CL_LRD " Hardware Error, core %s" CL_N "", fstr, vint, (int)temp, error_pct, hr, make_coreid(cid));
 
-			if (detect_sqrl && ((rand() & 0x7) == 0)) {
+			if (detect_sqrl && ((rand() & 0xF) == 0)) {
 				double fah = temp * 9.0f / 5.0f + 32;
 				//applog(LOG_INFO, "%sV: %0.2fv, T: %dc, Err: %.1f%% " CL_CYN "%.1f GH/s" CL_LRD " Squirrel Detected, core %s" CL_N "", fstr, vint, (int)temp, error_pct, hr, make_coreid(cid));
 				applog(LOG_INFO, "%s" CL_LRD " Squirrel Detected, core %s" CL_N "", fstr, make_coreid(cid));
@@ -667,6 +675,7 @@ int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_
 		else {
 			applog(LOG_INFO, "%s" CL_LBL " Share Found, core %s" CL_N "", fstr, make_coreid(cid));
 			work->nonces[0] = pdata[19];
+			//work->nonces[0] = swab32(work->nonces[0]);
 			return 1;
 		}
 

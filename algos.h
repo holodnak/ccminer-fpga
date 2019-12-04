@@ -19,6 +19,7 @@ enum sha_algos {
 	ALGO_DEEP,
 	ALGO_DECRED,
 	ALGO_DMD_GR,
+	ALGO_EAGLE,
 	ALGO_EQUIHASH,
 	ALGO_FRESH,
 	ALGO_FUGUE256,		/* Fugue256 */
@@ -32,6 +33,7 @@ enum sha_algos {
 	ALGO_KECCAKC,		/* refreshed Keccak with pool factor 256 */
 	ALGO_JACKPOT,
 	ALGO_JHA,
+	ALGO_KADENA,
 	ALGO_LBRY,
 	ALGO_LUFFA,
 	ALGO_LYRA2,
@@ -99,6 +101,7 @@ static const char *algo_names[] = {
 	"deep",
 	"decred",
 	"dmd-gr",
+	"eagle",
 	"equihash",
 	"fresh",
 	"fugue256",
@@ -112,6 +115,7 @@ static const char *algo_names[] = {
 	"keccakc",
 	"jackpot",
 	"jha",
+	"kadena",
 	"lbry",
 	"luffa",
 	"lyra2",
@@ -212,6 +216,8 @@ static inline int algo_to_int(char* arg)
 		else if (!strcasecmp("htmlcoin", arg))
 			i = ALGO_HTML;
 		else if (!strcasecmp("zp", arg))
+			i = ALGO_ZENPROTO;
+		else if (!strcasecmp("zen", arg))
 			i = ALGO_ZENPROTO;
 		else if (!strcasecmp("sha256", arg))
 			i = ALGO_SHA256D;

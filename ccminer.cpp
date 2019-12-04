@@ -79,11 +79,12 @@ bool more_difficult = false;
 int opt_algo_version = 1;
 int detect_method = 0;
 int dump_info = 0;
-int start_clock = -1;
+int start_clock = 400;
 int fast_clock_startup = 0;
 bool detect_sqrl = false;
 bool blank_user_agent = false;
 uint64_t odocrypt_current_key = 0;
+bool opt_discover_key = false;
 
 char active_dna[256] = "";
 
@@ -138,7 +139,7 @@ bool opt_hwmonitor = true;
 
 // todo: limit use of these flags,
 // prefer the pools[] attributes
-int opt_startclk = 0;
+//int opt_startclk = 0;
 bool want_longpoll = true;
 bool have_longpoll = false;
 bool want_stratum = true;
@@ -278,10 +279,9 @@ static unsigned char pk_script[25] = { 0 };
 static size_t pk_script_size = 0;
 static char *lp_id;
 bool opt_segwit_mode = false;
-
 #define API_MCAST_CODE "FTW"
 #define API_MCAST_ADDR "224.0.0.75"
-
+volatile int cur_freq;
 // strdup on char* to allow a common free() if used
 static char* opt_syslog_pfx = strdup(PROGRAM_NAME);
 char *opt_api_bind = strdup("127.0.0.1"); /* 0.0.0.0 for all ips */
@@ -557,6 +557,7 @@ struct option options[] = {
 	{ "more-difficult", 0, NULL, 1700 },
 	{ "fast-clock-startup", 0, NULL, 1701 },
 	{ "clkrate", 1, NULL, 1097 },
+	{ "discover-key", 1, NULL, 1727 },
 	{ "ignore-bad-ident", 0, NULL, 1096 },
 	{ 0, 0, 0, 0 }
 };
@@ -684,7 +685,8 @@ void proper_exit(int reason)
 
 	abort_flag = true;
 //	usleep(200 * 1000);
-	usleep(3000 * 1000);
+	printf("\n\n   ***   Waiting up to 10 seconds for FPGA shutdown....\n\n");
+	usleep(10000 * 1000);
 
 	if (reason == EXIT_CODE_OK && app_exit_code != EXIT_CODE_OK) {
 		reason = app_exit_code;
@@ -1003,7 +1005,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	if (pool->type & POOL_STRATUM) {
 		uint32_t sent = 0;
 		uint32_t ntime, nonce = work->nonces[idnonce];
-		char *ntimestr, *noncestr, *xnonce2str, *nvotestr;
+		char *ntimestr, * noncestr, * noncestr2, * noncestr3, *xnonce2str, *nvotestr;
 		uint16_t nvote = 0;
 
 		switch (opt_algo) {
@@ -1051,10 +1053,22 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			le32enc(&ntime, work->data[17]);
 			le32enc(&nonce, work->data[19]);
 		}
-		noncestr = bin2hex((const uchar*)(&nonce), 4);
 
-		if (check_dups)
-			sent = hashlog_already_submittted(work->job_id, nonce);
+		noncestr = bin2hex((const uchar*)(&nonce), 4);
+		noncestr2 = 0;
+		noncestr3 = 0;
+
+		if (opt_algo == ALGO_EAGLE) {
+			noncestr2 = bin2hex((const uchar*)(&work->nonces[1]), 4);
+			noncestr3 = bin2hex((const uchar*)(&work->nonces2[0]), 4);
+		}
+
+		if (check_dups) {
+			if (opt_algo == ALGO_EAGLE)
+				sent = hashlog_already_submittted(work->job_id, work->nonces[1]);
+			else
+				sent = hashlog_already_submittted(work->job_id, nonce);
+		}
 		if (sent > 0) {
 			sent = (uint32_t) time(NULL) - sent;
 			if (!opt_quiet) {
@@ -1062,7 +1076,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				hashlog_dump_job(work->job_id);
 			}
 			free(noncestr);
-			// prevent useless computing on some pools
+			 //prevent useless computing on some pools
 			g_work_time = 0;
 			restart_threads();
 			return true;
@@ -1089,7 +1103,13 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			applog(LOG_DEBUG, "share diff: %.5f (x %.1f)",
 				stratum.sharediff, work->shareratio[idnonce]);
 
-		if (opt_vote) { // ALGO_HEAVY
+		if (opt_algo == ALGO_EAGLE) {
+
+			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
+				"\"%s\", \"%s\", \"%s%s%s\"], \"id\":%u}",
+				pool->user, work->job_id, noncestr2, noncestr, noncestr3, stratum.job.shares_count + 10);
+		}
+		else if (opt_vote) { // ALGO_HEAVY
 			nvotestr = bin2hex((const uchar*)(&nvote), 2);
 			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
 					"\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":%u}",
@@ -1688,6 +1708,8 @@ static const char *json_rpc_gbt_lp_segwit =
 	"{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
 	GBT_CAPABILITIES ", \"longpollid\": \"%s\", \"rules\":[\"segwit\"]}], \"id\":0}\r\n";
 
+extern uint64_t odocrypt_current_key;
+
 static bool get_upstream_work(CURL *curl, struct work *work)
 {
 	bool rc = false;
@@ -1698,6 +1720,11 @@ static bool get_upstream_work(CURL *curl, struct work *work)
 
 	gettimeofday(&tv_start, NULL);
 
+	if (opt_algo == ALGO_ODO && opt_discover_key) {
+		int nt = (int)time(0);
+		odocrypt_current_key = nt - nt % (10 * 24 * 60 * 60);
+		applog(LOG_NOTICE, "get_upstream_work: discovering odocrypt key to be: %u",(unsigned int)odocrypt_current_key);
+	}
 	if (opt_algo == ALGO_SIA) {
 		char *sia_header = sia_getheader(curl, pool);
 		if (sia_header) {
@@ -2001,17 +2028,21 @@ err_out:
 	return false;
 }
 
+extern "C" int use_bsha3;
+
 void sha3d(void* state, const void* input, int len)
 {
 	uint32_t _ALIGN(64) buffer[16], hash[16];
 	sph_keccak_context ctx_keccak;
 
+	use_bsha3 = 1;
 	sph_keccak256_init(&ctx_keccak);
 	sph_keccak256(&ctx_keccak, input, len);
 	sph_keccak256_close(&ctx_keccak, (void*)buffer);
 	sph_keccak256_init(&ctx_keccak);
 	sph_keccak256(&ctx_keccak, buffer, 32);
 	sph_keccak256_close(&ctx_keccak, (void*)hash);
+	use_bsha3 = 0;
 
 	memcpy(state, hash, 32);
 }
@@ -2024,6 +2055,22 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 	if (!sctx->job.job_id) {
 		// applog(LOG_WARNING, "stratum_gen_work: job not yet retrieved");
 		return false;
+	}
+
+	if (opt_algo == ALGO_EAGLE) {
+		//applog(LOG_DEBUG, "stratum_gen_work: starting...");
+		memcpy(work->data, sctx->job.headhash, 32);
+		memcpy(work->target, sctx->job.claim, 32);
+		memcpy(work->xnonce2, sctx->xnonce1, 4);
+		//uint8_t buf4[4];
+
+		//memcpy(buf4, work->xnonce2, 4);
+		//work->xnonce2[0] = buf4[2];
+		//work->xnonce2[2] = buf4[0];
+
+		strcpy(work->job_id, sctx->job.job_id);
+
+		return true;
 	}
 
 	pthread_mutex_lock(&stratum_work_lock);
@@ -2044,6 +2091,7 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_BSHA3:
 			sha3d(merkle_root, sctx->job.coinbase, (int)sctx->job.coinbase_size);
 			break;
+		case ALGO_EAGLE:
 		case ALGO_DECRED:
 		case ALGO_EQUIHASH:
 		case ALGO_SIA:
@@ -2296,16 +2344,25 @@ static bool wanna_mine(int thr_id)
 
 static bool is_dev_time() {
 	// Add 2 seconds to compensate for connection time
-	time_t dev_portion = (time_t)(double(DONATE_CYCLE_TIME) * dev_donate_percent * 0.01 + 2);
+	time_t dev_portion = (time_t)(double(DONATE_CYCLE_TIME) * dev_donate_percent * 0.01 + 3);
 
-	if(dev_portion < 12) // No point in bothering with less than 10s
+	if(dev_portion < 13) // No point in bothering with less than 10s
 		return false;
 
 	if(have_dev_pool == false)
 		return false;
-	
-	return (time(NULL) - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME >= (DONATE_CYCLE_TIME - dev_portion);
+
+	time_t tt = time(NULL);
+/*	printf("DevTime     %d.\n", tt);
+	printf("DevPortion  %d.\n", dev_portion);
+	printf("DevTS       %d.\n", dev_timestamp);
+	printf("DevTSOffset %d.\n", dev_timestamp_offset);
+	printf("DevTTCalc   %d.\n", (tt - dev_timestamp + dev_timestamp_offset));*/
+
+	return (tt - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME >= (DONATE_CYCLE_TIME - dev_portion);
 }
+
+extern int fast_clock_startup;
 
 static void *miner_thread(void *userdata)
 {
@@ -2349,9 +2406,8 @@ static void *miner_thread(void *userdata)
 		applog(LOG_INFO, "  . algorithm: %s", fpga_algo_id_to_string(info.algo_id));
 		applog(LOG_INFO, "  . version:   %02X", info.version);
 		applog(LOG_INFO, "  . hardware:  %s", fpga_target_to_string(info.target));
-		applog(LOG_INFO, "  . data bits: %d", info.data_size);
 
-		if (fpga_init_device(mythr->fd, info.data_size / 8, opt_startclk) != 0) {
+		if (fpga_init_device(mythr->fd, info.data_size / 8, start_clock, fast_clock_startup) != 0) {
 			applog(LOG_INFO, "miner thread[%d]: error initializing FPGA on port %s", thr_id, devpath);
 			return NULL;
 		}
@@ -2895,6 +2951,10 @@ static void *miner_thread(void *userdata)
 		/* scan nonces for a proof-of-work hash */
 		switch (opt_algo) {
 
+		case ALGO_EAGLE:
+			rc = scanhash_eagle(thr_id, &work, max_nonce, &hdone64);
+			break;
+
 		case ALGO_SHA256Q:
 			rc = -1;// scanhash_sha256q(thr_id, &work, max_nonce, &hdone64);
 			break;
@@ -2942,7 +3002,10 @@ static void *miner_thread(void *userdata)
 			break;
 
 		case ALGO_ODO:
-			rc = scanhash_odo(thr_id, &work, max_nonce, &hdone64);
+			if (opt_algo_version == 2)
+				rc = scanhash_odo2(thr_id, &work, max_nonce, &hdone64);
+			else
+				rc = scanhash_odo(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 		default:
@@ -4128,6 +4191,9 @@ void parse_arg(int key, char *arg)
 	case 1721:
 		detect_sqrl = true;
 		break;
+	case 1727:
+		opt_discover_key = true;
+		break;
 	case 1099:
 		start_clock = atoi(arg);
 		break;
@@ -4141,13 +4207,15 @@ void parse_arg(int key, char *arg)
 		fast_clock_startup = 1;
 		break;
 	case 1097:
-		opt_startclk = atoi(arg);
+		printf("Please use other clock set method.");
+		proper_exit(0);
+		/*opt_startclk = atoi(arg);
 		if (opt_startclk < 100 || opt_startclk > 800) {
 			opt_startclk = 500;
 			printf("Starting clock rate (%dmhz) is invalid, please choose between 100 - 800mhz.\n", opt_startclk);
 		}
 		else
-			printf("Starting clock rate is %dmhz\n", opt_startclk);
+			printf("Starting clock rate is %dmhz\n", opt_startclk);*/
 		break;
 	case 1096:
 		printf("FPGA ignoring bad ident string\n");
@@ -4646,6 +4714,17 @@ int main(int argc, char *argv[])
 		opt_algo_version = 2;
 	}
 
+	if (opt_algo == ALGO_ODO && fpga2_get_device_version(pp) == 2) {
+		printf("FPGA has Odocrypt v2 bitstream.\n");
+		opt_algo_version = 2;
+	}
+
+	//not necessary, but the status line is needed
+	if (opt_algo == ALGO_ODO && fpga2_get_device_version(pp) == 1) {
+		printf("FPGA has Odocrypt v1 bitstream.\n");
+		opt_algo_version = 1;
+	}
+
 skipchecks:
 
 	set_user_agent_dna(fpga2_get_device_dna(pp) + 16);
@@ -4678,14 +4757,17 @@ skipchecks:
 		}
 
 		else {
-			printf("\n ** No dev pool availble! **\n\n");
+			printf("\n ** No dev pool availble! **\n\nExiting...\n\n");
+			exit(0);
 		}
 
 		dev_timestamp = time(NULL);
 
 		// ensure that donation time is not within first 30 seconds
-		dev_timestamp_offset = (time_t)fmod(rand(), DONATE_CYCLE_TIME * (1 - dev_donate_percent/100.) - 30);
+		//dev_timestamp_offset = (time_t)fmod(rand(), DONATE_CYCLE_TIME * (1 - dev_donate_percent / 100.) - 30);
+		dev_timestamp_offset = (DONATE_CYCLE_TIME / 4 * 3) - 60;
 		printf("\nDev donation set to %.1f%%.\n\n", dev_donate_percent);
+		//printf("\nDev Offset %d.\n\n", dev_timestamp_offset);
 	}
 	
 	if (!opt_benchmark && !strlen(rpc_url)) {
@@ -4723,6 +4805,10 @@ skipchecks:
 	if (opt_algo == ALGO_DECRED || opt_algo == ALGO_SIA) {
 		allow_gbt = false;
 		allow_mininginfo = false;
+	}
+
+	if (opt_algo == ALGO_EAGLE) {
+		opt_extranonce = false; // disable subscribe
 	}
 
 	if (opt_algo == ALGO_EQUIHASH) {

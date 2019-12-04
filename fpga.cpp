@@ -42,6 +42,9 @@ struct {
 	{ ALGO_HONEYCOMB, ALGOID_HONEYCOMB },
 	{ ALGO_BLOCKSTAMP, ALGOID_BLOCKSTAMP },
 	{ ALGO_ODO, ALGOID_ODOCRYPT },
+	{ ALGO_HTML, ALGOID_HTMLCOIN },
+	{ ALGO_EAGLE, ALGOID_EAGLE },
+	{ ALGO_KADENA, ALGOID_KADENA },
 	{ -1, -1 }
 };
 
@@ -60,6 +63,10 @@ struct algo_id_str_s algo_id_str[] = {
 	{ ALGOID_HONEYCOMB,	"Honeycomb" },
 	{ ALGOID_BLOCKSTAMP,"Blockstamp" },
 	{ ALGOID_ODOCRYPT  ,"Odocrypt" },
+	{ ALGOID_HTMLCOIN  ,"HTMLCoin" },
+	{ ALGOID_CRUZBIT,	"Cruzbit" },
+	{ ALGOID_EAGLE,		"EAGLE" },
+	{ ALGOID_KADENA,	"Kadena" },
 	{ 0xFF, "" }
 };
 
@@ -351,7 +358,7 @@ void fpga_close(int fd)
 int fpga_read(int fd, void* buf, size_t sz, size_t* read_sz)
 {
 	*read_sz = 0;
-	memset(buf, 0, 8);
+	memset(buf, 0, sz);
 	return serial_recv(fd, (char*)buf, sz, read_sz);
 }
 
@@ -528,10 +535,6 @@ static uint8_t *fpga_find_devices_by_path()
 	return ret;
 }
 
-extern int ignore_bad_ident;
-extern int start_clock;
-extern int fast_clock_startup;
-
 int mhz_to_freq(int fr);
 
 void fpga_core_enable(int fd)
@@ -546,7 +549,7 @@ void fpga_core_disable(int fd)
 	fpga_send_command(fd, 0x6E);
 }
 
-int fpga_init_device(int fd, int sz, int startclk)
+int fpga_init_device(int fd, int sz, int startclk, int faststart)
 {
 	//clear fpga communication
 	fpga_send_start(fd);
@@ -557,15 +560,15 @@ int fpga_init_device(int fd, int sz, int startclk)
 
 	//init clocks
 	if (clock_ctrl_disable == 0) {
-		if(fast_clock_startup == 1)
-			fpga_freq_init_fast(fd, (start_clock > 0) ? start_clock : startclk);
+		if(faststart == 1)
+			fpga_freq_init_fast(fd, startclk);
 		else
-			fpga_freq_init(fd, (start_clock > 0) ? start_clock : startclk);
+			fpga_freq_init(fd, startclk);
 	}
 	else {
-		if (start_clock > 0) {
-			applog(LOG_INFO, "FPGA clock control is disabled, applying one-time clock change to %dMHz.", start_clock);
-			fpga_send_command(fd, 0x80 | (uint8_t)mhz_to_freq(start_clock));
+		if (startclk > 0) {
+			applog(LOG_INFO, "FPGA clock control is disabled, applying one-time clock change to %dMHz.", startclk);
+			fpga_send_command(fd, 0x80 | (uint8_t)mhz_to_freq(startclk));
 		}
 		else
 			applog(LOG_INFO, "FPGA clock control is disabled.");

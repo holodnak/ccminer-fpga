@@ -94,6 +94,10 @@ typedef struct fpgainfo_s {
 #define ALGOID_BLOCKSTAMP	0x35
 #define ALGOID_HTMLCOIN		0x40
 #define ALGOID_ODOCRYPT		0x41
+#define ALGOID_CRUZBIT		0x70
+#define ALGOID_EAGLE		0x71
+#define ALGOID_K12			0x72
+#define ALGOID_KADENA		0x73
 
 //hardware definitions
 #define HW_XILINX	0x0
@@ -115,7 +119,7 @@ uint64_t fpga_get_ident(int fd);
 int fpga_send_data(int fd, void *buf, size_t sz);
 int fpga_send_command(int fd, uint8_t cmd);
 
-int fpga_init_device(int fd, int sz, int startclk);
+int fpga_init_device(int fd, int sz, int startclk, int faststart);
 
 char *fpga_algo_id_to_string(int id);
 char *fpga_target_to_string(int id);

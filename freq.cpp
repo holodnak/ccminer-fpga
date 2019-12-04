@@ -20,9 +20,8 @@
 //#define FABIO_CAP	900
 #define FREQ_MAX	920
 
-volatile int cur_freq = 0;
-
 extern int clock_ctrl_disable;
+extern volatile int cur_freq;
 
 int translate_freq(uint8_t fr)
 {
@@ -284,7 +283,7 @@ int fpga_freq_deinit(int fd, int sz)
 		if (cur_freq > boot_seq[n]) {
 			applog(LOG_INFO, "Decreasing clock: %dmhz...", boot_seq[n]);
 			fpga_set_freq(fd, boot_seq[n]);
-			Sleep(200);
+			Sleep(500);
 			cur_freq = boot_seq[n];
 		}
 	}

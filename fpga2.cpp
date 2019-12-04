@@ -116,7 +116,6 @@ int fpga2_find_devices(int algo_id, int single_port)
 		case 0: comports = fpga2_find_com_ports(buf); break;
 		case 1: comports = fpga2_find_com_ports2(buf); break;
 	}
-	
 
 	sp[0] = (uint8_t)single_port;
 	if (single_port != -1)

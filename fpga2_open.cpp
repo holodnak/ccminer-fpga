@@ -42,7 +42,7 @@ int fpga2_open_by_port(int port)
 	char path[64];
 
 	sprintf(path, "\\\\.\\COM%u", port);
-	return fpga_open(path);
+	return fpga2_open(path);
 }
 
 int fpga2_open_by_dna(const char* dna)

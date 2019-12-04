@@ -675,6 +675,7 @@ void bench_display_results();
 
 struct stratum_job {
 	char *job_id;
+	unsigned char headhash[32];
 	unsigned char prevhash[32];
 	size_t coinbase_size;
 	unsigned char *coinbase;
@@ -749,6 +750,7 @@ struct work {
 	uint8_t job_nonce_id;
 
 	uint32_t nonces[MAX_NONCES];
+	uint32_t nonces2[MAX_NONCES];
 	double sharediff[MAX_NONCES];
 	double shareratio[MAX_NONCES];
 	double targetdiff;

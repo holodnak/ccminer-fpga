@@ -199,6 +199,8 @@ static unsigned long crcbitbybitfast(unsigned char* p, unsigned long len) {
 	return(crc);
 }
 
+static bool crc_init = false;
+
 void fpga2_crc_init()
 {
 	crcmask = ((((unsigned long)1 << (order - 1)) - 1) << 1) | 1;
@@ -237,10 +239,13 @@ void fpga2_crc_init()
 		}
 		crcinit_nondirect = crc;
 	}
-
+	crc_init = true;
 }
 
 uint16_t fpga2_crc_calc(void* buf, int len)
 {
+	if (crc_init == false) {
+		fpga2_crc_init();
+	}
 	return crcbitbybitfast((unsigned char*)buf, len);
 }

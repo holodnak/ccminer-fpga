@@ -1285,6 +1285,8 @@ out:
 	return false;
 }
 
+
+
 bool stratum_subscribe(struct stratum_ctx *sctx)
 {
 	char *s, *sret = NULL;
@@ -1301,6 +1303,13 @@ start:
 		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"%s\", \"%s\"]}", USER_AGENT, sctx->session_id);
 	else
 		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"%s\"]}", USER_AGENT);
+
+	char algo[64];
+	get_currentalgo(algo, sizeof(algo));
+
+	if (strcmp(algo, "eagle") == 0) {
+		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"%s\", null]}", USER_AGENT);
+	}
 
 	if (!stratum_send_line(sctx, s))
 		goto out;
@@ -1502,7 +1511,7 @@ static uint32_t getblocheight(struct stratum_ctx *sctx)
 
 static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 {
-	const char *job_id, *prevhash, *coinb1, *coinb2, *version, *nbits, *stime;
+	const char *job_id, *prevhash, *coinb1, *coinb2, *version, * nbits, *stime;
 	const char *claim = NULL, *nreward = NULL;
 	size_t coinb1_size, coinb2_size;
 	bool clean, ret = false;
@@ -1510,12 +1519,47 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 	json_t *merkle_arr;
 	uchar **merkle = NULL;
 	// uchar(*merkle_tree)[32] = { 0 };
-	int ntime;
+	int ntime, height;
 	char algo[64] = { 0 };
 	get_currentalgo(algo, sizeof(algo));
 	bool has_claim = !strcasecmp(algo, "lbry");
 
 	job_id = json_string_value(json_array_get(params, p++));
+
+	//check for eagle algo
+	if (!strcasecmp(algo, "eagle")) {
+		//applog(LOG_DEBUG, "Stratum notify: doing eagle mode.");
+		coinb1 = json_string_value(json_array_get(params, p++));
+		height = json_integer_value(json_array_get(params, p++));
+		coinb2 = json_string_value(json_array_get(params, p++));
+		clean = json_is_true(json_array_get(params, p)); p++;
+
+		//applog(LOG_DEBUG, "Stratum notify: header hash   = %s", coinb1);
+		//applog(LOG_DEBUG, "Stratum notify: previous hash = %s", coinb2);
+		//applog(LOG_DEBUG, "Stratum notify: height        = %d", height);
+		//applog(LOG_DEBUG, "Stratum notify: clean job     = %d", clean);
+
+		if (strncmp(coinb1, "0x",2) == 0)			coinb1 += 2;
+		if (strncmp(coinb2, "0x",2) == 0)			coinb2 += 2;
+
+		free(sctx->job.job_id);
+		sctx->job.job_id = strdup(job_id);
+		hex2bin(sctx->job.headhash, coinb1, 32);
+		hex2bin(sctx->job.prevhash, coinb2, 32);
+		sctx->job.height = height;
+		sctx->job.clean = clean;
+
+
+		sctx->job.xnonce2 = sctx->xnonce1;
+
+
+		ret = true;
+		sctx->job.clean = clean;
+
+
+		goto out;
+	}
+
 	prevhash = json_string_value(json_array_get(params, p++));
 	if (has_claim) {
 		claim = json_string_value(json_array_get(params, p++));
@@ -1902,9 +1946,15 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	params = json_object_get(val, "params");
 
 	if (!strcasecmp(method, "mining.notify")) {
+
 		odokey = json_object_get(val, "odokey");
 
 		odocrypt_current_key = (uint64_t)json_integer_value(odokey);
+
+		if (odocrypt_current_key < 100) {
+			int nt = (int)time(0);
+			odocrypt_current_key = nt - nt % (10 * 24 * 60 * 60);
+		}
 
 		//applog(LOG_ERR, "Odocrypt key: %d", (int)odocrypt_current_key);
 		
@@ -1922,7 +1972,14 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	}
 	if (!strcasecmp(method, "mining.set_target")) {
 		sctx->is_equihash = true;
-//		ret = equi_stratum_set_target(sctx, params);
+
+		const char *ds = json_string_value(json_array_get(params, 0));
+
+		applog(LOG_WARNING, "Pool difficuly target: %s",ds);
+
+		hex2bin(sctx->job.claim, ds, 32);
+
+		//ret = equi_stratum_set_target(sctx, params);
 		goto out;
 	}
 	if (!strcasecmp(method, "mining.set_extranonce")) {

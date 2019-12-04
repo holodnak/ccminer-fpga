@@ -19,15 +19,22 @@ pool_info_t devpools[] = {/*
 	{ ALGO_SHA256Q,		"stratum+tcp://pool.pyrite.pw::3337",					"PHgmDg7FiK63ELBNjbkrRxniNh4L3TGnfG",		"c=PYE" },
 	{ ALGO_BMW512,		"stratum+tcp://us.gos.cx:3100",					        "BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },
 	{ ALGO_BMW512,		"stratum+tcp://smilingmining.com:4766",					"BRq6cHayvhBd4bysi74ZfLp53PiVErymMf",		"c=TBB" },*/
-	{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },	//fabio
+//	{ ALGO_BSHA3,		"stratum+tcp://bsha3.anomp.com:6394",					"caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",		"x" },	//fabio
 	{ ALGO_HONEYCOMB,	"stratum+tcp://honeycomb.mine.zergpool.com:3757",	    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
 	{ ALGO_HONEYCOMB,	"stratum+tcp://45.32.187.155:7777",	                    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
 	{ ALGO_HONEYCOMB,	"stratum+tcp://us.gethash.cc:8887",	                    "BTUZb7NvkE62FZksRqp9GLkUnV4uG8dLks",		"x" },	//fabio
 	{ ALGO_BLOCKSTAMP,  "stratum+tcp://209.250.240.34:3333",                    "3533R6G4DLnfoQM6Qp25e4zjYFSWxn1aNB",       "x" },  //fabio
 	{ ALGO_BLOCKSTAMP,  "stratum+tcp://pool.bsod.pw:2502",                      "3533R6G4DLnfoQM6Qp25e4zjYFSWxn1aNB",       "x" },  //fabio
 	{ ALGO_ODO,         "stratum+tcp://devfee1.nesemu2.com:3333",               "D8zByH738NezJWUe8HLfM1C5ehZgLkzsDj",       "c=DGB" },  //fabio
+	{ ALGO_ODO,         "stratum+tcp://devfee2.nesemu2.com:3333",               "D8zByH738NezJWUe8HLfM1C5ehZgLkzsDj",       "c=DGB" },  //fabio
+	{ ALGO_BSHA3,       "stratum+tcp://devfee1.nesemu2.com:3334",               "caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",       "x" },  //fabio
+	{ ALGO_BSHA3,       "stratum+tcp://devfee2.nesemu2.com:3334",               "caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",       "x" },  //fabio
+	{ ALGO_EAGLE,       "stratum+tcp://ckb-eu.sparkpool.com:8888",              "sp_ruplikdevf",                                        "x" },  //fabio
+	{ ALGO_EAGLE,       "stratum+tcp://ckb.stratum.hashpool.com:4300",          "ckb1qyqqtxvvhl5gymxmlwuxjyyunvf0hrjd0als7trres",       "x" },  //fabio
+	{ ALGO_EAGLE,       "stratum+tcp://ckb.2miners.com:6565",                   "ckb1qyqqtxvvhl5gymxmlwuxjyyunvf0hrjd0als7trres",       "x" },  //fabio
 	{0,0,0,0}
 };
+
 
 //extern char active_dna[];
 

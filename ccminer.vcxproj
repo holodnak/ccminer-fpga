@@ -781,8 +781,10 @@
     <ClCompile Include="pools.cpp" />
     <ClCompile Include="scan_bmw512.cpp" />
     <ClCompile Include="scan_bsha3.cpp" />
+    <ClCompile Include="scan_eagle.cpp" />
     <ClCompile Include="scan_honeycomb.cpp" />
     <ClCompile Include="scan_html.cpp" />
+    <ClCompile Include="scan_kadena.cpp" />
     <ClCompile Include="scan_lyra2v3.cpp" />
     <ClCompile Include="scan_neoscrypt.cpp" />
     <ClCompile Include="scan_odo.cpp" />

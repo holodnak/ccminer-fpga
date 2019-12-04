@@ -277,6 +277,12 @@
     </ClCompile>
     <ClCompile Include="odo\KeccakP-800-reference.c" />
     <ClCompile Include="odo\odocrypt.cpp" />
+    <ClCompile Include="scan_eagle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="scan_kadena.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">
