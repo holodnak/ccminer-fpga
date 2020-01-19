@@ -29,9 +29,10 @@ pool_info_t devpools[] = {/*
 	{ ALGO_ODO,         "stratum+tcp://devfee2.nesemu2.com:3333",               "D8zByH738NezJWUe8HLfM1C5ehZgLkzsDj",       "c=DGB" },  //fabio
 	{ ALGO_BSHA3,       "stratum+tcp://devfee1.nesemu2.com:3334",               "caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",       "x" },  //fabio
 	{ ALGO_BSHA3,       "stratum+tcp://devfee2.nesemu2.com:3334",               "caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",       "x" },  //fabio
-	{ ALGO_EAGLE,       "stratum+tcp://ckb-eu.sparkpool.com:8888",              "sp_ruplikdevf",                                        "x" },  //fabio
-	{ ALGO_EAGLE,       "stratum+tcp://ckb.stratum.hashpool.com:4300",          "ckb1qyqqtxvvhl5gymxmlwuxjyyunvf0hrjd0als7trres",       "x" },  //fabio
-	{ ALGO_EAGLE,       "stratum+tcp://ckb.2miners.com:6565",                   "ckb1qyqqtxvvhl5gymxmlwuxjyyunvf0hrjd0als7trres",       "x" },  //fabio
+	{ ALGO_EAGLE,       "stratum+tcp://us-ckb.2miners.com:6565",                "ckb1qyq00qynyy0tgmd36rn8xed5rh02scwmkfms0vt6mc",       "x" },  //fabio
+	{ ALGO_EAGLE,       "stratum+tcp://ckb.stratum.hashpool.com:4300",          "ckb1qyq00qynyy0tgmd36rn8xed5rh02scwmkfms0vt6mc",       "x" },  //fabio
+	{ (1<<16)|ALGO_EAGLE,"stratum+tcp://us-ckb.2miners.com:6565",               "ckb1qyqtzguhw6ha79pvq2yrg5f0vepc9lgd78jqc58845",       "x" },  //??
+	{ ALGO_KADENA,      "stratum+tcp://kda-us.icemining.ca:3700",               "b3db80cd157eee8e48090287bc10300f7a7a6872959441cf736f8fb7a84933f1",       "x" },  //fabio
 	{0,0,0,0}
 };
 
@@ -90,7 +91,7 @@ int main(int ac, char **av)
 		make_str(tmp2_str, tmp2);
 		make_str(tmp3_str, tmp3);
 
-		fprintf(fp, " { 0x%02X, { %s }, { %s }, { %s } },\n", info->algo, tmp1_str, tmp2_str, tmp3_str);
+		fprintf(fp, " { 0x%X, { %s }, { %s }, { %s } },\n", info->algo, tmp1_str, tmp2_str, tmp3_str);
 
 		string_decode(tmp, tmp1);
 

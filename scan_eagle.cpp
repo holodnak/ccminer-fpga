@@ -12,12 +12,6 @@
 
 
 
-
-
-
-
-
-
 #define INPUT_LEN (32)
 #define ROUND (43)
 #define RATE (256)
@@ -852,7 +846,151 @@ int validate_eagle_hash(unsigned char* data, int len, uint32_t * target)
 	//printDataFPGA(hash, 32);
 }
 
+#define MAX_SOLERR (1024 * 2)
 
+class csolerr {
+public:
+	int basetime;
+	int soltimes[MAX_SOLERR];
+	int errtimes[MAX_SOLERR];
+	int solnum, errnum;
+	int solpos, errpos;
+	csolerr() {
+		solpos = solnum = 0;
+		errpos = errnum = 0;
+		for (int i = 0; i < MAX_SOLERR; i++)
+			soltimes[i] = errtimes[i] = 0;
+		basetime = get_time();
+	}
+	int get_time() {
+		return (int)(GetTickCount64() / 1000LL);
+	}
+	void add_sol(int t = 0) {
+		soltimes[solpos] = (t == 0) ? get_time() : t;
+		solpos = (solpos + 1) % MAX_SOLERR;
+		solnum++;
+	}
+	void add_err(int t = 0) {
+		errtimes[errpos] = (t == 0) ? get_time() : t;
+		errpos = (errpos + 1) % MAX_SOLERR;
+		errnum++;
+	}
+	int err_in_last_secs(int secs) {
+		int i, j;
+		UINT64 min_time = get_time() - secs;
+
+		for (i = 0, j = errpos; i < min(errnum, MAX_SOLERR); i++) {
+			if (j == 0)
+				j = MAX_SOLERR - 1;
+			else
+				j--;
+			if (errtimes[j] < min_time)
+				break;
+		}
+		return i;
+	}
+	int sol_in_last_secs(int secs) {
+		int i, j;
+		UINT64 min_time = get_time() - secs;
+
+		for (i = 0, j = solpos; i < min(solnum, MAX_SOLERR); i++) {
+			if (j == 0)
+				j = MAX_SOLERR - 1;
+			else
+				j--;
+			if (soltimes[j] < min_time)
+				break;
+		}
+		return i;
+	}
+};
+
+csolerr solerr;
+
+char nonce128[16];
+
+static uint64_t secs_start = 0;
+static uint64_t secs_elapsed = 0;
+
+extern int opt_temp_max, opt_freq_max, opt_freq_min, opt_temp_max_time;
+
+UINT64 temp_lasttime = 0;
+
+int temp_sum = 0;
+int temp_num = 0;
+int temp_avg = 0;
+
+UINT64 temp_max_checktime = 0;
+UINT64 temp_max_checktime2 = 0;
+UINT64 temp_max_checktime3 = 0;
+
+int opt_temp_checkinterval = 10;
+int opt_temp_fuzz = 3;
+int opt_max_err = 2;
+
+//tick the temp target brain
+void tt_tick(int fd, int cur_temp)
+{
+	UINT64 temp_curtime = GetTickCount64();
+	int n;
+
+	//if not enabled, return
+	if (opt_temp_max == 0 || opt_freq_max == 0)
+		return;
+
+	//add temp reading
+	temp_sum += cur_temp;
+	temp_num++;
+
+	//wait for at least one second
+	if (temp_curtime == temp_lasttime)
+		return;
+	temp_avg = temp_sum / temp_num;
+	temp_sum = 0;
+	temp_num = 0;
+	temp_lasttime = temp_curtime;
+
+	if (temp_max_checktime == 0 && (temp_avg > opt_temp_max)) {
+		//applog(LOG_INFO, "tt: avg>max cur_temp = %d (max = %d), cur_freq = %d (max = %d)", temp_avg, opt_temp_max, cur_freq, opt_freq_max);
+		temp_max_checktime = temp_curtime + (opt_temp_checkinterval * 1000);
+	}
+	if ((temp_max_checktime < temp_curtime)) {
+		if (temp_avg > opt_temp_max) {
+			//applog(LOG_INFO, "tt: clock-- cur_temp = %d (max = %d), cur_freq = %d (max = %d)", temp_avg, opt_temp_max, cur_freq, opt_freq_max);
+			if (cur_freq > opt_freq_min) {
+				applog(LOG_INFO, "Temps: Temp of %d is greater than max of %d, decreasing clock.", temp_avg, opt_temp_max);
+				fpga_freq_decrease(fd);
+			}
+			temp_max_checktime = temp_curtime + (opt_temp_checkinterval * 1000);
+		}
+		else {
+			//applog(LOG_INFO, "tt: chktm=0 cur_temp = %d (max = %d), cur_freq = %d (max = %d)", temp_avg, opt_temp_max, cur_freq, opt_freq_max);
+			temp_max_checktime = 0;
+		}
+	}
+
+	if (temp_max_checktime2 == 0 && (temp_avg < (opt_temp_max - opt_temp_fuzz))) {
+		if (cur_freq < opt_freq_max) {
+			//applog(LOG_INFO, "tt: avg<max cur_temp = %d (max = %d), cur_freq = %d (max = %d)", temp_avg, opt_temp_max, cur_freq, opt_freq_max);
+			temp_max_checktime2 = temp_curtime + (opt_temp_checkinterval * 1000);
+		}
+	}
+
+	if (temp_max_checktime2 < temp_curtime) {
+		if (temp_avg < (opt_temp_max - max(0,opt_temp_fuzz - 1))) {
+			//applog(LOG_INFO, "tt: clock++ cur_temp = %d (max = %d), cur_freq = %d (max = %d)", temp_avg, opt_temp_max, cur_freq, opt_freq_max);
+			if (cur_freq < opt_freq_max) {
+				applog(LOG_INFO, "Temps: Temp of %d is less than max of %d, increasing clock.", temp_avg, opt_temp_max);
+				fpga_freq_increase(fd);
+			}
+			temp_max_checktime2 = temp_curtime + (opt_temp_checkinterval * 1000);
+		}
+		else {
+			//applog(LOG_INFO, "tt: chktm=0 cur_temp = %d (max = %d), cur_freq = %d (max = %d)", temp_avg, opt_temp_max, cur_freq, opt_freq_max);
+			temp_max_checktime2 = 0;
+		}
+	}
+}
 
 int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
 {
@@ -866,7 +1004,7 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	const uint32_t Htarg = ptarget[7];
 	uint32_t my_target[8];
 	static int megahashes = 1;
-	static Hashrate hashrate(25);
+//	static Hashrate hashrate(25);
 	unsigned char wbuf[84], bufz[128];
 	uint32_t endiandata[32];
 
@@ -879,38 +1017,8 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	static char old_job_id[128]="error!";
 	static unsigned char old_wbuf[128]="";
 
-	///////////////////////////////////////////////
-
-	unsigned int data[] = {
-
-	0xd5a74fba,
-	0x920ad0d3,
-	0x5ec5726f,
-	0x26327547,
-
-	0xcbc82180,
-	0xe356e5cc,
-	0xf6cf2e6b,
-	0xd75f8a66,
-
-	0x00c904bd,
-	0x00000000,
-	0x00000000,
-	0x00114026,
-
-	0x0000FFFF
-
-	};
-
-	bswap((unsigned char*)data, 12 * 4);
-
-	//memcpy(&endiandata, data, 32);
-
-
-
-	///////////////////////////////////////////
-
 	less_difficult = true;
+	more_difficult = true;
 	memcpy(my_target, work->target, 32);
 	reverse((unsigned char*)my_target, 32);
 	my_target[7] = 0x01000000;
@@ -938,6 +1046,7 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	memcpy(wbuf + 64, ((uint8_t*)endiandata) + 32, 16);
 	memcpy(wbuf + 80, &my_target[7], 4);
 
+	wbuf[68] = work->xnonce2[4];
 	wbuf[67] = work->xnonce2[3];
 	wbuf[66] = work->xnonce2[2];
 	wbuf[65] = work->xnonce2[1];
@@ -946,29 +1055,35 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	wbuf[71] = (char)rand();
 	wbuf[70] = (char)rand();
 	wbuf[69] = (char)rand();
-	wbuf[68] = (char)rand();
+	//wbuf[68] = (char)rand();
 
+	if (secs_elapsed == 0 && secs_start == 0) {
+		secs_start = GetTickCount64();
+	}
+
+	secs_elapsed = (GetTickCount64() - secs_start) / 1000;
+	secs_elapsed++;
 
 	struct timeval tv_start, elapsed, tv_end;
 	int ret;
 
 	if (memcmp(work->job_id, old_job_id,128) != 0) {
+		//printf("wbuf: "); printDataFPGA(wbuf, 80);
 		fpga_send_data(thr_info[thr_id].fd, wbuf, 84);
 		memcpy(old_job_id, work->job_id, 128);
 		memcpy(old_wbuf, wbuf, 84);
 
 		if (opt_debug) applog(LOG_DEBUG, "New job, sending FPGA data.");
 
-		unsigned char buf9[99];
-		fpga2_recv_response(thr_info[thr_id].fd, (uint8_t*)buf9);
-		fpga2_recv_response(thr_info[thr_id].fd, (uint8_t*)buf9);
-
-		if (opt_debug) applog(LOG_DEBUG, "FPGA ready.");
+//		unsigned char buf9[99];
+//		fpga2_recv_response(thr_info[thr_id].fd, (uint8_t*)buf9);
+//		fpga2_recv_response(thr_info[thr_id].fd, (uint8_t*)buf9);
+//		if (opt_debug) applog(LOG_DEBUG, "FPGA ready.");
 
 		total_hashes += round_hashes;
 		round_hashes = 0;
-		//hrc.Add(total_hashes / 1000000LL);
-		applog(LOG_WARNING, "Hashrates: [60 sec: %.2fGH/sec] [15 min: %.2fGH/sec]  [60 min: %.2fGH/sec]", (double)hrc.Calc_15sec() / 1000.0f, (double)hrc.Calc_60sec() / 1000.0f, (double)hrc.Calc_15min() / 1000.0f);
+		hrc.Add(total_hashes / 1000000LL);
+		//applog(LOG_WARNING, "Hashrates: [15 sec: %.2fGH/sec] [60 sec: %.2fGH/sec]  [15 min: %.2fGH/sec]", (double)hrc.Calc_15sec() / 1000.0f, (double)hrc.Calc_60sec() / 1000.0f, (double)hrc.Calc_15min() / 1000.0f);
 
 	}
 	else {
@@ -987,17 +1102,6 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	//printf("wbuf: "); printDataFPGA(wbuf, 84);
 	//printf("tart: "); printDataFPGA(work->target, 32);
 
-#define GC(xx,yy) (((xx) << 6) | (yy))
-#define CSOLS(xx,yy) ( thr_info[thr_id].cid_sols[ GC(xx,yy) ] )
-#define CERRS(xx,yy) ( thr_info[thr_id].cid_errs[ GC(xx,yy) ] )
-#define CSOLSs(xx,yy) (CSOLS(xx,yy) + CERRS(xx,yy))
-
-	uint32_t fivecores = CSOLSs(0, 4) + CSOLSs(1, 4) + CSOLSs(1, 4);
-	uint32_t fourcores = CSOLSs(0, 3) + CSOLSs(1, 3) + CSOLSs(1, 3) + fivecores;
-	uint32_t threecores = CSOLSs(0, 2) + CSOLSs(1, 2) + CSOLSs(1, 2) + fourcores;
-	uint32_t twocores = CSOLSs(0, 1) + CSOLSs(1, 1) + CSOLSs(1, 1) + threecores;
-	uint32_t onecore2 = CSOLSs(2, 0) + twocores;
-	uint32_t onecore1 = CSOLSs(1, 0) + onecore2;
 
 	int start = time(0) - 3;
 
@@ -1030,11 +1134,23 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 		cgtime(&tv_end); timersub(&tv_end, &tv_start, &elapsed);
 
+		static double vint = 0, temp = 0;
+		static double temp2 = 0.0f;
+		static double temp3 = 0.0f;
 
 		if (ret == 0) {		// No Nonce Found
-			if ((now - start) >= 3) {
+			if ((now - start) >= 1) {
 				//LOG_INFO("updating temp/vint. (now=%d, start=%d, diff=%d)", now, start, now - start);
-				uint8_t cmd = 0x01;
+				uint8_t cmd = 0x1;
+
+				static int flop = 0;
+
+				flop = flop + 1;
+
+				cmd = (flop & 1) ? 0x01 : 0x11;
+
+				if (temp2 > 0.0f && temp3 > 0.0f)
+					cmd = 0x11;
 
 				//check = now;
 				//fpga_get_health(fd, &temp, &vint);
@@ -1059,7 +1175,7 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 		else if (ret == -1) {
 			applog(LOG_ERR, "Serial Read Error (ret=%d), need to exit.", ret);
-			Sleep(2000);
+			proper_exit(0);
 			//serial_fpga_close(thr);
 			//dev_error(serial_fpga, REASON_DEV_COMMS_ERROR);
 			break;
@@ -1070,8 +1186,7 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 			applog(LOG_ERR, "Serial CRC Error.");
 			thr_info[thr_id].crc_err++;
 			char buf2[1024];
-			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
-			Sleep(1000);
+			Sleep(100);
 			fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
 			//Sleep(1000);
 			//fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
@@ -1080,6 +1195,8 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 		bool is_health = (buf[0] == 0) && (buf[1] == 0) && (buf[2] == 0) && (buf[3] == 0) && (buf[4] == 0);
 
+		bool is_health2 = (buf[0] == 0xEE) && (buf[7] == 0xEE);
+
 		//printData(buf, 8);
 
 		double error_pct;
@@ -1087,17 +1204,22 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 		if (thr_info[thr_id].solutions == 0)
 			error_pct = 0;
 		else
-			error_pct = (double)thr_info[thr_id].hw_err / (double)thr_info[thr_id].solutions * 100.0f;
-
-		static double vint=0, temp=0;
+			error_pct = (double)thr_info[thr_id].hw_err / (double)(thr_info[thr_id].solutions + thr_info[thr_id].hw_err) * 100.0f;
 
 		double hr = ((double)thr_hashrates[thr_id]) / 1000000.0f;
 		char hr_unit = 'M';
 
-		hashrate.Add((int)hr);
+		//hashrate.Add((int)hr);
 
 		//hr = (double)hashrate.Get();
-		hr = hrc.Calc_15sec();
+		if (secs_elapsed < 60)
+			hr = hrc.Calc(15);
+		else if (secs_elapsed < 120)
+			hr = hrc.Calc(60);
+		else if (secs_elapsed < 300)
+			hr = hrc.Calc(120);
+		else
+			hr = hrc.Calc(300);
 
 		if (hr > 1000.0f || megahashes == 0) {
 			megahashes = 0;
@@ -1116,17 +1238,52 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 			tt = ((buf[5] << 4) | ((buf[6] & 0xF0) >> 4)) << 4;
 			vint = ((double)vv) / 65536.0f * 3.0f;
 			temp = (((double)tt) * 509.3140064f / 65536.0f) - 280.23087870f;
+			tt_tick(thr_info[thr_id].fd, (int)temp);
 		}
 
-		if (cur_freq > 0)
-			sprintf(fstr, "[%s: %dMHz %dc %0.2fV] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
+		if (is_health2) {
+			uint32_t vv, tt, tt2, tt3;
+			uint64_t b64 = 0;
+
+			memcpy(&b64, buf, 8);
+			b64 = bswap_64(b64);
+
+//			printf("b64: %llx\n", b64);
+
+			b64 >>= 8;
+
+			vv = (b64 & 0xFFF) << 4;
+			b64 >>= 12;
+
+			tt = (b64 & 0xFFF) << 4;
+			b64 >>= 12;
+
+			tt2 = (b64 & 0xFFF) << 4;
+			b64 >>= 12;
+
+			tt3 = (b64 & 0xFFF) << 4;
+
+			double vint2 = ((double)vv) / 65536.0f * 3.0f;
+
+			if (vint2 <= 1.0f && vint >= 0.5f) {
+				vint = vint2;
+				temp = (((double)tt) * 509.3140064f / 65536.0f) - 280.23087870f;
+				temp2 = (((double)tt2) * 509.3140064f / 65536.0f) - 280.23087870f;
+				temp3 = (((double)tt3) * 509.3140064f / 65536.0f) - 280.23087870f;
+			}
+			int es = solerr.err_in_last_secs(60);
+			int ss = solerr.sol_in_last_secs(60);
+			printf("%d errors/%d sols in last 60 seconds\n", es, ss);
+			tt_tick(thr_info[thr_id].fd, (int)(max(temp, max(temp2, temp3))));
+		}
+
+		if (temp2 > 0.0f && temp3 > 0.0f)
+			sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc %dc %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, (int)temp2, (int)temp3, vint, hr, hr_unit, error_pct);
 		else
-			sprintf(fstr, "[%s: %0.2fv %dc] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, vint, (int)temp, hr, hr_unit, error_pct);
+			sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
 
-		sprintf(fstr, "[" CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
-
-		if (is_health) {
-			sprintf(fstr, "[" CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
+		if (is_health || is_health2) {
+			//sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
 			//sprintf(fstr, "[%s: %dMHz %dc %0.2fV] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
 			applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d" CL_N "", fstr, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
 			continue;
@@ -1155,8 +1312,11 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 		memcpy((char*)& nonce, buf, 8);
 
-		//nonce -= 18;
+		if (thr_info[thr_id].fpga_info.version == 2) {
+			nonce ^= 0xAAAAAAAAAAAAAAAAULL;
+		}
 
+		//nonce -= 18;
 
 		memcpy(&work->nonces[0], &nonce, 4);
 		memcpy(&work->nonces2[0], ((uint8_t*)&nonce)+4, 4);
@@ -1164,8 +1324,9 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 		//reverse((unsigned char*)& nonce, 8);
 
 		memcpy(bufz, endiandata, 32);
-		memcpy(bufz +40, &nonce, 8);
+		memcpy(bufz + 40, &nonce, 8);
 
+		bufz[36] = work->xnonce2[4];
 		bufz[35] = work->xnonce2[3];
 		bufz[34] = work->xnonce2[2];
 		bufz[33] = work->xnonce2[1];
@@ -1174,7 +1335,7 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 		bufz[39] = wbuf[71];
 		bufz[38] = wbuf[70];
 		bufz[37] = wbuf[69];
-		bufz[36] = wbuf[68];
+		//bufz[36] = wbuf[68];
 
 		if (nonce == 0xFFFFFFFFFFFFFFFFLL) {
 			//applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d", fstr, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
@@ -1184,13 +1345,17 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 			return 0;
 		}
 
-
-
 		if (!validate_eagle_hash((unsigned char*)bufz, 48, my_target)) {
 			//hashes += (unsigned int)(nonce & 0xFFFFFFFFLL);
 			//valid = 1;
 			*hashes_done = nonce;
 			thr_info[thr_id].hw_err++;
+			solerr.add_err();
+			//check_old_wbuf(buf, old_wbuf);
+			{
+				unsigned char abuf[100];
+				//memcpy(abuf, old_wbuf);
+			}
 			applog(LOG_INFO, "%s" CL_RD2 " Hardware Error" CL_N "", fstr);
 		}
 
@@ -1202,15 +1367,15 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 			thr_info[thr_id].solutions++;
 			memcpy(my_target2, work->target, 32);
 			reverse((unsigned char*)my_target2, 32);
+			solerr.add_sol();
 
 			//if (validate_eagle((uint8_t*)wbuf, (uint32_t*)& nonce, (uint8_t*)my_target)) {
 			if (validate_eagle_hash((unsigned char*)bufz, 48, my_target2)) {
+				applog(LOG_INFO, "%s" CL_LYL " Solution meets target!" CL_N "", fstr);
 				return 1;
 			}
 
 		}
-
-		//return 0;
 	}
 
 	*hashes_done = n;

@@ -67,6 +67,7 @@ BOOL WINAPI ConsoleHandler(DWORD);
 #define MAX_COM_PORTS	64
 
 char user_agent_str[128] = "ccminer/2.3.1";
+bool opt_twofees = false;
 
 const char* default_user_agent = "ccminer/2.3.1";//PACKAGE_NAME "/" PACKAGE_VERSION;
 //const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
@@ -106,7 +107,7 @@ void set_user_agent_dna(char* str)
 	n1 = rand() & 3;
 	n2 = (rand() % 3) + 1;
 	double devfee = (double)MIN_DEV_DONATE_PERCENT;
-	sprintf(user_agent_str, "%s/0.12.%d-%s/%1.1f", names[n1 & 3], n2, str, devfee);
+	//sprintf(user_agent_str, "%s/0.12.%d-%s/%1.1f", names[n1 & 3], n2, str, devfee);
 }
 
 int ports[MAX_COM_PORTS];
@@ -136,6 +137,11 @@ bool opt_protocol = false;
 bool opt_benchmark = false;
 bool opt_showdiff = true;
 bool opt_hwmonitor = true;
+
+int opt_temp_max = 0;
+int opt_freq_max = 0;
+int opt_freq_min = 100;
+int opt_temp_max_time = 90;
 
 // todo: limit use of these flags,
 // prefer the pools[] attributes
@@ -557,8 +563,12 @@ struct option options[] = {
 	{ "more-difficult", 0, NULL, 1700 },
 	{ "fast-clock-startup", 0, NULL, 1701 },
 	{ "clkrate", 1, NULL, 1097 },
-	{ "discover-key", 1, NULL, 1727 },
+	{ "discover-key", 0, NULL, 1727 },
 	{ "ignore-bad-ident", 0, NULL, 1096 },
+	{ "temp-max", 1, NULL, 1750 },
+	{ "freq-max", 1, NULL, 1751 },
+	{ "freq-min", 1, NULL, 1752 },
+	{ "temp-max-time", 1, NULL, 1753 },
 	{ 0, 0, 0, 0 }
 };
 
@@ -1005,7 +1015,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	if (pool->type & POOL_STRATUM) {
 		uint32_t sent = 0;
 		uint32_t ntime, nonce = work->nonces[idnonce];
-		char *ntimestr, * noncestr, * noncestr2, * noncestr3, *xnonce2str, *nvotestr;
+		char *ntimestr, * noncestr, * noncestr2, * noncestr3, *xnonce2str, *nvotestr, *noncestr4;
 		uint16_t nvote = 0;
 
 		switch (opt_algo) {
@@ -1057,8 +1067,16 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		noncestr = bin2hex((const uchar*)(&nonce), 4);
 		noncestr2 = 0;
 		noncestr3 = 0;
+		noncestr4 = 0;
 
 		if (opt_algo == ALGO_EAGLE) {
+			noncestr2 = bin2hex((const uchar*)(&work->nonces[1]), 4);
+			noncestr3 = bin2hex((const uchar*)(&work->nonces2[0]), 4);
+		}
+
+		if (opt_algo == ALGO_KADENA) {
+			nonce &= 0xff000000;
+			noncestr = bin2hex((const uchar*)(&nonce), 4);
 			noncestr2 = bin2hex((const uchar*)(&work->nonces[1]), 4);
 			noncestr3 = bin2hex((const uchar*)(&work->nonces2[0]), 4);
 		}
@@ -1066,6 +1084,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		if (check_dups) {
 			if (opt_algo == ALGO_EAGLE)
 				sent = hashlog_already_submittted(work->job_id, work->nonces[1]);
+			else if (opt_algo == ALGO_KADENA)
+				sent = hashlog_already_submittted(work->job_id, work->nonces2[0]);
 			else
 				sent = hashlog_already_submittted(work->job_id, nonce);
 		}
@@ -1104,11 +1124,28 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				stratum.sharediff, work->shareratio[idnonce]);
 
 		if (opt_algo == ALGO_EAGLE) {
+			
+			//char* xnonce1str = bin2hex(stratum.xnonce1, 4);
+			char* xnonce1str = "";
+
+			int offset = 0;
+			if (stratum.xnonce2_size == 11)
+				offset = 2;
 
 			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
-				"\"%s\", \"%s\", \"%s%s%s\"], \"id\":%u}",
-				pool->user, work->job_id, noncestr2, noncestr, noncestr3, stratum.job.shares_count + 10);
+				"\"%s\", \"%s\", \"%s%s%s%s\"], \"id\":%u}",
+				pool->user, work->job_id, xnonce1str, noncestr2+ offset, noncestr, noncestr3, stratum.job.shares_count + 10);
 		}
+
+
+		else if (opt_algo == ALGO_KADENA) {
+
+			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
+				"\"%s\", \"%s\", \"%s%s\"], \"id\":%u}",
+				pool->user, work->job_id+8, noncestr+6, noncestr3, stratum.job.shares_count + 10);
+		}
+
+
 		else if (opt_vote) { // ALGO_HEAVY
 			nvotestr = bin2hex((const uchar*)(&nvote), 2);
 			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
@@ -2053,7 +2090,7 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 	int i;
 
 	if (!sctx->job.job_id) {
-		// applog(LOG_WARNING, "stratum_gen_work: job not yet retrieved");
+		applog(LOG_WARNING, "stratum_gen_work: job not yet retrieved");
 		return false;
 	}
 
@@ -2061,14 +2098,47 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		//applog(LOG_DEBUG, "stratum_gen_work: starting...");
 		memcpy(work->data, sctx->job.headhash, 32);
 		memcpy(work->target, sctx->job.claim, 32);
+		
+
+		//printf("xnonce2: "); printDataFPGA(sctx->job.xnonce2, sctx->xnonce2_size);
+		//printf("xnonce2 sz: %d\n", sctx->xnonce2_size);
+		//printf("xnonce1: "); printDataFPGA(sctx->xnonce1, sctx->xnonce1_size);
+		//printf("xnonce1 sz: %d\n", sctx->xnonce1_size);
+		memcpy(work->xnonce2, sctx->xnonce1, sctx->xnonce1_size);
+
+		strcpy(work->job_id, sctx->job.job_id);
+		//snprintf(work->job_id, sizeof(work->job_id), "%07x %s",	be32dec(sctx->job.ntime) & 0xfffffff, sctx->job.job_id);
+
+		return true;
+	}
+
+	if (opt_algo == ALGO_KADENA) {
+		//applog(LOG_DEBUG, "stratum_gen_work: starting...");
+		memcpy(work->extra, sctx->job.kda, 286);
+		memcpy(work->data, work->extra+8, 32);
+		memcpy(work->target, sctx->job.claim, 32);
 		memcpy(work->xnonce2, sctx->xnonce1, 4);
+
+		//printf("data   : "); printDataFPGA(work->extra, 286);
+		//printf("target : "); printDataFPGA(work->target, 32);
+		//printf("xnonce2: "); printDataFPGA(work->xnonce2, 4);
+		//printf("job_id : %s\n", sctx->job.job_id); //printDataFPGA(sctx->job.job_id, 32);
 		//uint8_t buf4[4];
 
 		//memcpy(buf4, work->xnonce2, 4);
 		//work->xnonce2[0] = buf4[2];
 		//work->xnonce2[2] = buf4[0];
 
-		strcpy(work->job_id, sctx->job.job_id);
+		//strcpy(work->job_id, sctx->job.job_id);
+
+//		strcpy(work->job_id, sctx->job.job_id);
+
+		snprintf(work->job_id, sizeof(work->job_id), "%07x %s",
+			be32dec(sctx->job.ntime) & 0xfffffff, sctx->job.job_id);
+		work->xnonce2_len = sctx->xnonce2_size;
+		memcpy(work->xnonce2, sctx->job.xnonce2, sctx->xnonce2_size);
+		//printf("work job : %s\n", work->job_id); //printDataFPGA(sctx->job.job_id, 32);
+
 
 		return true;
 	}
@@ -2092,6 +2162,7 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 			sha3d(merkle_root, sctx->job.coinbase, (int)sctx->job.coinbase_size);
 			break;
 		case ALGO_EAGLE:
+		case ALGO_KADENA:
 		case ALGO_DECRED:
 		case ALGO_EQUIHASH:
 		case ALGO_SIA:
@@ -2311,7 +2382,7 @@ static bool wanna_mine(int thr_id)
 	}
 	// Network Difficulty
 	if (opt_max_diff > 0.0 && net_diff > opt_max_diff) {
-		int next = pool_get_first_valid(cur_pooln+1, false);
+		int next = pool_get_first_valid(cur_pooln+1, false, false);
 		if (num_pools > 1 && pools[next].max_diff != pools[cur_pooln].max_diff && opt_resume_diff <= 0.)
 			conditional_pool_rotate = allow_pool_rotate;
 		if (!thr_id && !conditional_state[thr_id] && !opt_quiet)
@@ -2324,7 +2395,7 @@ static bool wanna_mine(int thr_id)
 	}
 	// Network hashrate
 	if (opt_max_rate > 0.0 && net_hashrate > opt_max_rate) {
-		int next = pool_get_first_valid(cur_pooln+1, false);
+		int next = pool_get_first_valid(cur_pooln+1, false, false);
 		if (pools[next].max_rate != pools[cur_pooln].max_rate && opt_resume_rate <= 0.)
 			conditional_pool_rotate = allow_pool_rotate;
 		if (!thr_id && !conditional_state[thr_id] && !opt_quiet) {
@@ -2346,23 +2417,61 @@ static bool is_dev_time() {
 	// Add 2 seconds to compensate for connection time
 	time_t dev_portion = (time_t)(double(DONATE_CYCLE_TIME) * dev_donate_percent * 0.01 + 3);
 
-	if(dev_portion < 13) // No point in bothering with less than 10s
+	if (dev_portion < 13) // No point in bothering with less than 10s
 		return false;
 
-	if(have_dev_pool == false)
+	if (have_dev_pool == false)
 		return false;
 
 	time_t tt = time(NULL);
-/*	printf("DevTime     %d.\n", tt);
+
+	//standard calculation for one dev fee
+	if (opt_twofees == false)
+		return (tt - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME >= (DONATE_CYCLE_TIME - dev_portion);
+
+	//printf("DevPortion      %d, %d, %d.\n", dev_portion, (tt - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME, (DONATE_CYCLE_TIME - dev_portion));
+	/*
+	printf("DevTime     %d.\n", tt);
 	printf("DevPortion  %d.\n", dev_portion);
 	printf("DevTS       %d.\n", dev_timestamp);
 	printf("DevTSOffset %d.\n", dev_timestamp_offset);
-	printf("DevTTCalc   %d.\n", (tt - dev_timestamp + dev_timestamp_offset));*/
+	printf("DevTTCalc   %d.\n", (tt - dev_timestamp + dev_timestamp_offset));
+	*/
+	//	return (tt - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME >= (DONATE_CYCLE_TIME - dev_portion);
+	time_t tval = dev_portion / 2;
+	time_t tpos = (tt - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME;
+	time_t tmin = (DONATE_CYCLE_TIME - (tval * 2));
+	time_t tmax = (DONATE_CYCLE_TIME - tval);
+	printf("DevPortion      %d, %d, %d, %d.\n", tval, tpos, tmin, tmax);
+	return tpos >= tmin && tpos < tmax;
+}
 
-	return (tt - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME >= (DONATE_CYCLE_TIME - dev_portion);
+static bool is_dev_time2() {
+
+	if (opt_twofees == false)
+		return false;
+
+	// Add 2 seconds to compensate for connection time
+	time_t dev_portion = (time_t)(double(DONATE_CYCLE_TIME) * dev_donate_percent * 0.01 + 3);
+
+	if (dev_portion < 13) // No point in bothering with less than 10s
+		return false;
+
+	if (have_dev_pool == false)
+		return false;
+
+	time_t tt = time(NULL);
+	time_t tval = dev_portion / 2;
+	time_t tpos = (tt - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME;
+	time_t tmin = (DONATE_CYCLE_TIME - (tval));
+	time_t tmax = (DONATE_CYCLE_TIME - 0);
+	printf("DevPortion2     %d, %d, %d, %d.\n", tval, tpos, tmin, tmax);
+	return tpos >= tmin && tpos < tmax;
 }
 
 extern int fast_clock_startup;
+
+int devcnt;
 
 static void *miner_thread(void *userdata)
 {
@@ -2469,6 +2578,10 @@ static void *miner_thread(void *userdata)
 	}
 
 //	gpu_led_off(dev_id);
+	char buf2[1024];
+	size_t len2 = 0;
+
+	fpga_read(thr_info[thr_id].fd, (char*)buf2, 1024, &len2);
 
 	while (!abort_flag) {
 		struct timeval tv_start, tv_end, diff;
@@ -2508,14 +2621,14 @@ static void *miner_thread(void *userdata)
 
 			if (opt_algo == ALGO_DECRED || opt_algo == ALGO_WILDKECCAK /* getjob */)
 				work_done = true; // force "regen" hash
-			while (!work_done && time(NULL) >= (g_work_time + opt_scantime)) {
-				usleep(100*1000);
+/*			while (!work_done && time(NULL) >= (g_work_time + opt_scantime)) {
+				usleep(2*1000);
 				if (sleeptime > 4) {
 					extrajob = true;
 					break;
 				}
 				sleeptime++;
-			}
+			}*/
 			if (sleeptime && opt_debug && !opt_quiet)
 				applog(LOG_DEBUG, "sleeptime: %u ms", sleeptime*100);
 			//nonceptr = (uint32_t*) (((char*)work.data) + wcmplen);
@@ -2712,7 +2825,9 @@ static void *miner_thread(void *userdata)
 			sleep(5);
 			if (!thr_id) pools[cur_pooln].wait_time += 5;
 			continue;
-		} else if (is_dev_time() == ((pools[cur_pooln].type & POOL_DONATE) == 0) && !have_longpoll) {
+
+		}
+		else if (is_dev_time2() == ((pools[cur_pooln].type & POOL_DONATE2) == 0) && !have_longpoll) {
 
 			// reset default mem offset before idle..
 			if (!pool_is_switching) {
@@ -2722,14 +2837,16 @@ static void *miner_thread(void *userdata)
 				}
 				if (!thr_id) {
 					// Switch back to previous pool
-					if (pools[cur_pooln].type & POOL_DONATE) {
+					if (pools[cur_pooln].type & POOL_DONATE2) {
 						pool_switch(thr_id, prev_pooln);
 					}
 					// Switch to dev pool
 					else {
-						if (!thr_id) prev_pooln = cur_pooln;
-						int dev_pool = pool_get_first_valid(cur_pooln, true);
+						//if (!thr_id) prev_pooln = cur_pooln;
+						int dev_pool = pool_get_first_valid(cur_pooln, false, true);
 						pool_switch(thr_id, dev_pool);
+						applog(LOG_INFO, "switching to dev pool 2 (count = %d) user='%s'", devcnt, pools[cur_pooln].user);
+						devcnt++;
 					}
 				}
 				// free gpu resources
@@ -2752,6 +2869,50 @@ static void *miner_thread(void *userdata)
 			}
 			sleep(1);
 			continue;
+
+		} else if (is_dev_time() == ((pools[cur_pooln].type & POOL_DONATE) == 0) && !have_longpoll) {
+
+			// reset default mem offset before idle..
+			if (!pool_is_switching) {
+				// Need all threads to switch pools at the same time
+				if (opt_n_threads > 1) {
+					pthread_barrier_wait(&pool_algo_barr);
+				}
+				if (!thr_id) {
+					// Switch back to previous pool
+					if (pools[cur_pooln].type & POOL_DONATE) {
+						pool_switch(thr_id, prev_pooln);
+					}
+					// Switch to dev pool
+					else {
+						if (!thr_id) prev_pooln = cur_pooln;
+						int dev_pool = pool_get_first_valid(cur_pooln, true, false);
+						pool_switch(thr_id, dev_pool);
+						applog(LOG_INFO, "switching to dev pool (count = %d) user='%s'", devcnt, pools[cur_pooln].user);
+						devcnt++;
+					}
+				}
+				// free gpu resources
+				algo_free_all(thr_id);
+				// clear any free error (algo switch)
+//				cuda_clear_lasterror();
+
+				// we need to wait completion on all cards before the switch
+				if (opt_n_threads > 1) {
+					pthread_barrier_wait(&pool_algo_barr);
+				}
+				// firstwork_time = time(NULL);
+				pool_is_switching = true;
+			}
+			else if (time(NULL) - firstwork_time > 35) {
+				if (!opt_quiet)
+					applog(LOG_WARNING, "Pool switching timed out...");
+				if (!thr_id) pools[cur_pooln].wait_time += 1;
+				pool_is_switching = false;
+			}
+			sleep(1);
+			continue;
+
 		} else {
 			// reapply mem offset if needed
 		}
@@ -2933,8 +3094,7 @@ static void *miner_thread(void *userdata)
 
 		work.scanned_from = start_nonce;
 
-		gpulog(LOG_DEBUG, thr_id, "start=%08x end=%08x range=%08x",
-			start_nonce, max_nonce, (max_nonce-start_nonce));
+		//gpulog(LOG_DEBUG, thr_id, "start=%08x end=%08x range=%08x",	start_nonce, max_nonce, (max_nonce-start_nonce));
 
 		if (cgpu && loopcnt > 1) {
 			cgpu->monitor.sampling_flag = true;
@@ -2953,6 +3113,10 @@ static void *miner_thread(void *userdata)
 
 		case ALGO_EAGLE:
 			rc = scanhash_eagle(thr_id, &work, max_nonce, &hdone64);
+			break;
+
+		case ALGO_KADENA:
+			rc = scanhash_kadena(thr_id, &work, max_nonce, &hdone64);
 			break;
 
 		case ALGO_SHA256Q:
@@ -3018,8 +3182,8 @@ static void *miner_thread(void *userdata)
 		if (abort_flag)
 			break; // time to leave the mining loop...
 
-		if (work_restart[thr_id].restart)
-			continue;
+		//if (work_restart[thr_id].restart)
+		//	continue;
 
 		/* record scanhash elapsed time */
 		gettimeofday(&tv_end, NULL);
@@ -3488,8 +3652,8 @@ wait_stratum_url:
 					}
 					else
 						applog(LOG_BLUE, "%s %s block %d", pool->short_url, algo_names[opt_algo], stratum.job.height);
+					restart_threads();
 				}
-				restart_threads();
 				if (check_dups || opt_showdiff)
 					hashlog_purge_old();
 				stats_purge_old();
@@ -4221,6 +4385,27 @@ void parse_arg(int key, char *arg)
 		printf("FPGA ignoring bad ident string\n");
 		ignore_bad_ident = 1;
 		break;
+
+	case 1750:
+		opt_temp_max = atoi(arg);
+		printf("FPGA max temp target = %d\n", opt_temp_max);
+		break;
+
+	case 1751:
+		opt_freq_max = atoi(arg);
+		printf("FPGA max freq target = %d\n", opt_freq_max);
+		break;
+
+	case 1752:
+		opt_freq_min = atoi(arg);
+		printf("FPGA min freq target = %d\n", opt_freq_min);
+		break;
+
+	case 1753:
+		opt_temp_max_time = atoi(arg);
+		printf("FPGA max temp time = %d\n", opt_temp_max_time);
+		break;
+
 	case 1083:
 		opt_segwit_mode = true;
 		break;
@@ -4625,8 +4810,29 @@ int main(int argc, char *argv[])
 	/* parse command line */
 	parse_cmdline(argc, argv);
 
+#ifdef LOCK_ALGO
+
+	if (opt_algo != LOCK_ALGO) {
+		printf("This miner is only for %s\n", algo_names[opt_algo]);
+		exit(0);
+	}
+
+#endif
+
+	if (opt_temp_max && opt_freq_max) {
+		if (opt_freq_min > opt_freq_max) {
+			printf("min freq greater than max freq, fixing min freq to max freq.\n");
+			opt_freq_min = opt_freq_max;
+		}
+	}
+
 	have_dev_pool = false;
 	init_dev_pools();
+
+#ifdef TWO_FEES
+	opt_twofees = true;
+	applog(LOG_WARNING, "Second devfee enabled.");
+#endif
 
 	if (dump_info == 1) {
 		pool_info_t info;
@@ -4641,12 +4847,34 @@ int main(int argc, char *argv[])
 			p->type |= POOL_DONATE;
 			p->algo = opt_algo;
 			have_dev_pool = true;
-			printf("\nDev fee: %f\n\n",(double)(MIN_DEV_DONATE_PERCENT));
-			printf("\nDev pool: %s, %s\n\n", rpc_url, rpc_user);
+			if(opt_twofees)
+				printf("\nDev fee: %f\n", (double)(MIN_DEV_DONATE_PERCENT) / 2.0f);
+			else
+				printf("\nDev fee: %f\n", (double)(MIN_DEV_DONATE_PERCENT));
+			printf("\nDev pool: %s, %s\n", rpc_url, rpc_user);
 		}
 		else {
 			printf("\nDev pool: error: algo is %d\n\n", opt_algo);
 		}
+
+		if (opt_twofees && get_dev_pool2(&info, opt_algo) == 0) {
+			// Set dev pool credentials.
+			rpc_user = strdup(info.user);
+			rpc_pass = strdup(info.pass);
+			rpc_url = strdup(info.url);
+			short_url = strdup("dev pool");
+			pool_set_creds(num_pools++);
+			struct pool_infos* p = &pools[num_pools - 1];
+			p->type |= POOL_DONATE2;
+			p->algo = opt_algo;
+			have_dev_pool = true;
+			printf("\nDev fee: %f\n", (double)(MIN_DEV_DONATE_PERCENT) / 2.0f);
+			printf("\nDev2 pool: %s, %s\n", rpc_url, rpc_user);
+		}
+		else {
+			printf("\nDev2 pool: error: algo is %d\n", opt_algo);
+		}
+
 		exit(0);
 	}
 
@@ -4743,22 +4971,46 @@ skipchecks:
 		pool_info_t info;
 
 		if (get_dev_pool(&info, opt_algo) == 0) {
+
 			// Set dev pool credentials.
 			rpc_user = strdup(info.user);
 			rpc_pass = strdup(info.pass);
 			rpc_url = strdup(info.url);
 			short_url = strdup("dev pool");
 			pool_set_creds(num_pools++);
-			struct pool_infos *p = &pools[num_pools - 1];
+			struct pool_infos* p = &pools[num_pools - 1];
 			p->type |= POOL_DONATE;
 			p->algo = opt_algo;
 			have_dev_pool = true;
-			//printf("\nDev pool: %s, %s\n\n",rpc_url,rpc_user);
+			//if (opt_debug)
+				printf("\nDev pool: %s, %s\n\n",rpc_url,rpc_user);
 		}
 
 		else {
 			printf("\n ** No dev pool availble! **\n\nExiting...\n\n");
 			exit(0);
+		}
+
+		if (opt_twofees) {
+			if (get_dev_pool2(&info, opt_algo) == 0) {
+				// Set dev pool credentials.
+				rpc_user = strdup(info.user);
+				rpc_pass = strdup(info.pass);
+				rpc_url = strdup(info.url);
+				short_url = strdup("dev pool2");
+				pool_set_creds(num_pools++);
+				struct pool_infos* p = &pools[num_pools - 1];
+				p->type |= POOL_DONATE2;
+				p->algo = opt_algo;
+				have_dev_pool = true;
+				//if (opt_debug)
+				printf("\nDev pool2: %s, %s\n\n", rpc_url, rpc_user);
+			}
+
+			else {
+				printf("\n ** No dev2 pool availble! **\n\nExiting...\n\n");
+				exit(0);
+			}
 		}
 
 		dev_timestamp = time(NULL);
@@ -4799,7 +5051,7 @@ skipchecks:
 
 	if (opt_debug)
 		pool_dump_infos();
-	cur_pooln = pool_get_first_valid(0, false);
+	cur_pooln = pool_get_first_valid(0, false, false);
 	pool_switch(-1, cur_pooln);
 
 	if (opt_algo == ALGO_DECRED || opt_algo == ALGO_SIA) {
@@ -4808,6 +5060,10 @@ skipchecks:
 	}
 
 	if (opt_algo == ALGO_EAGLE) {
+		opt_extranonce = true; // disable subscribe
+	}
+
+	if (opt_algo == ALGO_KADENA) {
 		opt_extranonce = false; // disable subscribe
 	}
 

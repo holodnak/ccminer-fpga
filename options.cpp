@@ -57,7 +57,7 @@ void init_dev_pools()
 	memset(dstinfo, 0, sizeof(pool_info_t));
 }
 
-int get_dev_pool(pool_info_t *info, int algo)
+int get_dev_pool(pool_info_t* info, int algo)
 {
 	int i;
 
@@ -69,6 +69,28 @@ int get_dev_pool(pool_info_t *info, int algo)
 
 		//success, found pool
 		if (devpools[i].algo == algo) {
+			memcpy(info, &devpools[i], sizeof(pool_info_t));
+			return 0;
+		}
+
+	}
+
+	//error
+	return -1;
+}
+
+int get_dev_pool2(pool_info_t* info, int algo)
+{
+	int i;
+
+	memset(info, 0, sizeof(pool_info_t));
+	for (i = 0; ; i++) {
+
+		if (devpools[i].url == 0 || devpools[i].user == 0 || devpools[i].algo == 0)
+			break;
+
+		//success, found pool
+		if ((devpools[i].algo & 0xFFFF) == algo && (devpools[i].algo >> 16) == 1) {
 			memcpy(info, &devpools[i], sizeof(pool_info_t));
 			return 0;
 		}

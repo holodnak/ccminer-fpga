@@ -773,6 +773,7 @@
     <ClCompile Include="fpga2_open.cpp" />
     <ClCompile Include="fpga2_crc.cpp" />
     <ClCompile Include="freq.cpp" />
+    <ClCompile Include="ftdi.cpp" />
     <ClCompile Include="gendevpools\gendevpools\string_enc.cpp" />
     <ClCompile Include="lyra2\lyrav3\Lyra3.cpp" />
     <ClCompile Include="odo\KeccakP-800-reference.c" />
@@ -858,6 +859,7 @@
     <ClInclude Include="compat\ccminer-config.h" />
     <ClInclude Include="elist.h" />
     <ClInclude Include="algos.h" />
+    <ClInclude Include="ftdi.h" />
     <ClInclude Include="lyra2\lyrav3\Lyra3.h" />
     <ClInclude Include="miner.h" />
     <ClInclude Include="nvml.h" />

@@ -284,7 +284,7 @@ bool pool_switch(int thr_id, int pooln)
 }
 
 // search available pool
-int pool_get_first_valid(int startfrom, bool donate)
+int pool_get_first_valid(int startfrom, bool donate, bool donate2)
 {
 	int next = 0;
 	struct pool_infos *p;
@@ -297,6 +297,8 @@ int pool_get_first_valid(int startfrom, bool donate)
 			continue;
 		if (((p->type & POOL_DONATE) == 0) == donate)
 			continue;
+		if (((p->type & POOL_DONATE2) == 0) == donate2)
+			continue;
 		next = pooln;
 		break;
 	}
@@ -307,7 +309,7 @@ int pool_get_first_valid(int startfrom, bool donate)
 bool pool_switch_next(int thr_id)
 {
 	if (num_pools > 1) {
-		int pooln = pool_get_first_valid(cur_pooln+1, false);
+		int pooln = pool_get_first_valid(cur_pooln+1, false, false);
 		return pool_switch(thr_id, pooln);
 	} else {
 		// no switch possible

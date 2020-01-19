@@ -17,3 +17,4 @@ int scanhash_odo(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* ha
 int scanhash_bsha3_v2(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
 int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
 int scanhash_odo2(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);
+int scanhash_kadena(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done);

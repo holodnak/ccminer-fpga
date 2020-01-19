@@ -283,6 +283,9 @@
     <ClCompile Include="scan_kadena.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ftdi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">
@@ -460,6 +463,9 @@
     <ClInclude Include="odo\hashodo.h" />
     <ClInclude Include="odo\KeccakP-800-SnP.h" />
     <ClInclude Include="odo\odocrypt.h" />
+    <ClInclude Include="ftdi.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\ccminer.ico">

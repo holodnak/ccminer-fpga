@@ -1263,6 +1263,7 @@ static bool stratum_parse_extranonce(struct stratum_ctx *sctx, json_t *params, i
 	}
 skip_n2:
 	pthread_mutex_lock(&stratum_work_lock);
+
 	if (sctx->xnonce1)
 		free(sctx->xnonce1);
 	sctx->xnonce1_size = strlen(xnonce1) / 2;
@@ -1276,7 +1277,7 @@ skip_n2:
 	sctx->xnonce2_size = xn2_size;
 	pthread_mutex_unlock(&stratum_work_lock);
 
-	if (pndx == 0 && opt_debug) /* pool dynamic change */
+	if (/*pndx == 0 &&*/ opt_debug) /* pool dynamic change */
 		applog(LOG_DEBUG, "Stratum set nonce %s with extranonce2 size=%d",
 			xnonce1, xn2_size);
 
@@ -1308,6 +1309,10 @@ start:
 	get_currentalgo(algo, sizeof(algo));
 
 	if (strcmp(algo, "eagle") == 0) {
+		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"%s\", null]}", USER_AGENT);
+	}
+
+	if (strcmp(algo, "kadena") == 0) {
 		sprintf(s, "{\"id\": 1, \"method\": \"mining.subscribe\", \"params\": [\"%s\", null]}", USER_AGENT);
 	}
 
@@ -1556,6 +1561,34 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 		ret = true;
 		sctx->job.clean = clean;
 
+
+		goto out;
+	}
+
+	//check for kadena algo
+	if (!strcasecmp(algo, "kadena")) {
+		//applog(LOG_DEBUG, "Stratum notify: doing eagle mode.");
+		coinb1 = json_string_value(json_array_get(params, p++));
+		clean = json_is_true(json_array_get(params, p)); p++;
+
+		*((uint32_t*)sctx->xnonce1) &= 0x00FFFFFF;
+
+		if (strncmp(coinb1, "0x", 2) == 0)			coinb1 += 2;
+
+		//applog(LOG_DEBUG, "Stratum notify: header job_id  = %s", job_id);
+		//applog(LOG_DEBUG, "Stratum notify: header len     = %d", strlen(coinb1) / 2);
+		//applog(LOG_DEBUG, "Stratum notify: header hash    = %s", coinb1);
+		//applog(LOG_DEBUG, "Stratum notify: header xnonce2 = %x", *(uint32_t*)sctx->xnonce1);
+
+		free(sctx->job.job_id);
+		sctx->job.job_id = strdup(job_id);
+		hex2bin(sctx->job.kda, coinb1, 286);
+		sctx->job.height = (uint32_t)*((uint64_t*)(((uint8_t*)sctx->job.kda)+258));
+		sctx->job.clean = clean;
+
+		sctx->job.xnonce2 = sctx->xnonce1;
+
+		ret = true;
 
 		goto out;
 	}

@@ -220,7 +220,7 @@ void reverse(unsigned char *b, int len)
 	static unsigned char bt[1024];
 	int i, j;
 
-	if (len > 256) {
+	if (len > 1024) {
 		system("pause");
 		exit(0);
 	}

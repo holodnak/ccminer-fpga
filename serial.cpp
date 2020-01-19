@@ -20,7 +20,9 @@
 #include "miner.h"
 #include "serial.h"
 
-int serial_setup_com_port(HANDLE hSerial, unsigned long baud, signed short timeout, bool purge)
+#include "ftdi.h"
+
+static int serial_setup_com_port(HANDLE hSerial, unsigned long baud, signed short timeout, bool purge)
 {
 	COMMCONFIG comCfg = { 0 };
 	comCfg.dwSize = sizeof(COMMCONFIG);
@@ -53,6 +55,22 @@ int serial_setup_com_port(HANDLE hSerial, unsigned long baud, signed short timeo
 	return 0;
 }
 
+static size_t _serial_read(int fd, char* buf, size_t bufsiz, char* eol)
+{
+	size_t len, tlen = 0;
+	while (bufsiz) {
+		len = _read(fd, buf, eol ? 1 : bufsiz);
+		if (unlikely(len == -1))
+			break;
+		tlen += len;
+		if (eol && *eol == buf[0])
+			break;
+		buf += len;
+		bufsiz -= len;
+	}
+	return tlen;
+}
+
 int serial_open(const char *devpath, unsigned long baud, signed short timeout, bool purge)
 {
 	HANDLE hSerial = CreateFile(devpath, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
@@ -81,22 +99,6 @@ int serial_open(const char *devpath, unsigned long baud, signed short timeout, b
 		return -1;
 
 	return _open_osfhandle((intptr_t)hSerial, 0);
-}
-
-static size_t _serial_read(int fd, char *buf, size_t bufsiz, char *eol)
-{
-	size_t len, tlen = 0;
-	while (bufsiz) {
-		len = _read(fd, buf, eol ? 1 : bufsiz);
-		if (unlikely(len == -1))
-			break;
-		tlen += len;
-		if (eol && *eol == buf[0])
-			break;
-		buf += len;
-		bufsiz -= len;
-	}
-	return tlen;
 }
 
 int serial_recv(int fd, char *buf, size_t bufsize, size_t *readlen)
@@ -142,4 +144,12 @@ void serial_close(int fd)
 int serial_send(int fd, char *buf, size_t bufsize)
 {
 	return _write(fd, buf, bufsize);
+}
+
+void serial_find(int *list256)
+{
+	FT_STATUS ftStatus;
+	DWORD numDevs = 0;
+
+	ftStatus = FTDI_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY);
 }

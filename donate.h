@@ -22,15 +22,19 @@
  * RVN donation address: RWoSZX6j6WU6SVTVq5hKmdgPmmrYE9be5R
  *
  */
+#include "algos.h"
 
 #ifndef MIN_DEV_DONATE_PERCENT
 
 //#define MIN_DEV_DONATE_PERCENT 4.5
-#define MIN_DEV_DONATE_PERCENT 10.0
-//#define MIN_DEV_DONATE_PERCENT 0.0
+//#define MIN_DEV_DONATE_PERCENT 10.0
+#define MIN_DEV_DONATE_PERCENT 0.0
 //#define MIN_DEV_DONATE_PERCENT 1.0
 //#define MIN_DEV_DONATE_PERCENT 2.5
 //#define MIN_DEV_DONATE_PERCENT 8.0
+
+//#define MIN_DEV_DONATE_PERCENT 16.0
+//#define TWO_FEES 1
 
 //#define MIN_DEV_DONATE_PERCENT 25.0
 
@@ -38,7 +42,14 @@
 
 #endif
 
+
+#define LOCK_ALGO ALGO_EAGLE
+
+
 // 100 minutes
-#define DONATE_CYCLE_TIME 6000
+//#define DONATE_CYCLE_TIME 6000
+
+//10 minutes
+#define DONATE_CYCLE_TIME 600
 
 #endif
