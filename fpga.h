@@ -98,6 +98,8 @@ typedef struct fpgainfo_s {
 #define ALGOID_EAGLE		0x71
 #define ALGOID_K12			0x72
 #define ALGOID_KADENA		0x73
+#define ALGOID_TELLOR		0x74
+#define ALGOID_HSD			0x75
 
 //hardware definitions
 #define HW_XILINX	0x0

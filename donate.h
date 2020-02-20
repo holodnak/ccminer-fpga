@@ -43,13 +43,13 @@
 #endif
 
 
-#define LOCK_ALGO ALGO_EAGLE
+#define LOCK_ALGO ALGO_HSD
 
 
 // 100 minutes
-//#define DONATE_CYCLE_TIME 6000
+#define DONATE_CYCLE_TIME 6000
 
 //10 minutes
-#define DONATE_CYCLE_TIME 600
+//#define DONATE_CYCLE_TIME 600
 
 #endif

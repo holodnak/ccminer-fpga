@@ -6,12 +6,6 @@
 #include <inttypes.h>
 
 
-
-
-
-
-
-
 #define INPUT_LEN (32)
 #define ROUND (43)
 #define RATE (256)
@@ -20,10 +14,6 @@
 #define DELIMITER (0x06)
 #define OUTPUT_LENGTH (256 >> 3)
 #define N 1600000
-
-
-
-
 
 
 #include <immintrin.h>
@@ -856,14 +846,17 @@ public:
 	int solnum, errnum;
 	int solpos, errpos;
 	csolerr() {
+		clear();
+	}
+	int get_time() {
+		return (int)(GetTickCount64() / 1000LL);
+	}
+	void clear() {
 		solpos = solnum = 0;
 		errpos = errnum = 0;
 		for (int i = 0; i < MAX_SOLERR; i++)
 			soltimes[i] = errtimes[i] = 0;
 		basetime = get_time();
-	}
-	int get_time() {
-		return (int)(GetTickCount64() / 1000LL);
 	}
 	void add_sol(int t = 0) {
 		soltimes[solpos] = (t == 0) ? get_time() : t;
@@ -912,7 +905,8 @@ char nonce128[16];
 static uint64_t secs_start = 0;
 static uint64_t secs_elapsed = 0;
 
-extern int opt_temp_max, opt_freq_max, opt_freq_min, opt_temp_max_time;
+extern int opt_temp_max, opt_freq_max, opt_freq_min, opt_temp_max_time, opt_temp_shutdown;
+extern double opt_error_max;
 
 UINT64 temp_lasttime = 0;
 
@@ -926,10 +920,189 @@ UINT64 temp_max_checktime3 = 0;
 
 int opt_temp_checkinterval = 10;
 int opt_temp_fuzz = 3;
-int opt_max_err = 2;
+int opt_max_err = 0;
+
+class cbrain {
+public:
+	int avg_temp;
+	double avg_err;
+	double avg_err5m;
+	int temp_sum;
+	int temp_num;
+	double err_sum;
+	int err_num;
+	UINT64 lasttime;
+	UINT64 lastdec, lastinc;
+	int best_freq;
+	UINT64 lasterror;
+
+	cbrain() {
+		avg_temp = 1000;
+		avg_err = 0.0f;
+		avg_err5m = 0.0f;
+		temp_sum = 0;
+		temp_num = 0;
+		err_sum = 0.0f;
+		err_num = 0;
+		lasttime = 0;
+		best_freq = 0;
+		lastdec = 0;
+		lastinc = 0;
+		lasterror = 0;
+	}
+protected:
+	bool need_increase(UINT64 curtime) {
+		if (avg_temp >= opt_temp_max) {
+			//printf("cbrain::need_increase(): (avg_temp >= opt_temp_max) == true\n");
+			return false;
+		}
+
+		if (avg_err >= (opt_error_max - 1.0f)) {
+			//printf("cbrain::need_increase(): (avg_err >= opt_error_max) == true\n");
+			return false;
+		}
+
+		if (avg_err5m >= (opt_error_max - 1.0f)) {
+			//printf("cbrain::need_increase(): (avg_err >= opt_error_max) == true\n");
+			return false;
+		}
+
+		if (cur_freq >= opt_freq_max) {
+			//printf("cbrain::need_increase(): (cur_freq >= opt_freq_max) == true\n");
+			return false;
+		}
+
+		if (cur_freq >= best_freq) {
+			if ((lasterror + (90 * 1000)) < curtime) {
+				lasterror = curtime;
+				//applog(LOG_WARNING, "Brain: 60 seconds minutes without error, trying to increase freq\n");
+				//if (avg_err5m < opt_error_max) {
+				if (avg_err < opt_error_max) {
+						applog(LOG_WARNING, "Brain: errors look ok, increasing freq");
+				}
+				return true;
+			}
+			return false;
+		}
+
+		//printf("cbrain::need_increase(): yes, need an increase in freq!\n");
+		return true;
+	}
+
+	bool need_decrease(UINT64 curtime) {
+		bool ret = false;
+
+		if (avg_temp >= opt_temp_max) {
+			//printf("cbrain::need_decrease(): (avg_temp >= opt_temp_max) == true\n");
+			ret = true;
+		}
+
+		else if (avg_err >= opt_error_max) {
+			//printf("cbrain::need_decrease(): (avg_err >= opt_error_max) == true\n");
+			ret = true;
+		}
+
+		if (ret && cur_freq >= opt_freq_min) {
+			//printf("cbrain::need_decrease(): (cur_freq >= opt_freq_min) == true\n");
+			return true;
+		}
+
+		//printf("cbrain::need_decrease(): no\n");
+		return false;
+	}
+
+	void add_temp(int cur_temp) {
+		temp_sum += cur_temp;
+		temp_num++;
+	}
+
+	void add_err(double cur_err) {
+		err_sum += cur_err;
+		err_num++;
+	}
+
+public:
+
+	// returns 0 for no action, -1 to decrease clock, 1 to increase clock
+	int tick(int cur_temp, double cur_err, double cur_err5m) {
+		UINT64 curtime = GetTickCount64();
+		static bool did_inc = false;
+		static bool did_dec = false;
+
+		if (opt_temp_max == 0 || opt_freq_max == 0)
+			return 0;
+
+		if (best_freq == 0) {
+			best_freq = opt_freq_max;
+			applog(LOG_WARNING, "Brain: setting best frequency to freq max of %d MHz", best_freq);
+		}
+
+		if (best_freq == -2) {
+			best_freq = cur_freq;
+			applog(LOG_WARNING, "Brain: setting best frequency current freq of %d MHz", best_freq);
+		}
+
+		//wait at least 30 second to process data
+		if (curtime >= (lasttime + 30000)) {
+			add_temp(cur_temp);
+			add_err(cur_err);
+			lasttime = curtime;
+			if (temp_num > 0)
+				avg_temp = temp_sum / temp_num;
+			if (err_num > 0)
+				avg_err = err_sum / (double)err_num;
+			avg_err5m = cur_err5m;
+
+			//printf("cbrain::tick(): time = %lld, avg_temp = %d (%d readings), avg_err = %f (%d readings)\n", curtime, avg_temp, temp_num, avg_err, err_num);
+			temp_sum = 0;
+			temp_num = 0;
+			err_sum = 0.0f;
+			err_num = 0;
+
+			if (avg_err >= opt_error_max) {
+				lasterror = curtime;
+			}
+
+			if (need_decrease(curtime)) {
+/*				if (lastdec >= (curtime - 60 * 1000)) {
+					applog(LOG_WARNING, "Brain: last decrement was less than 60 seconds ago.");
+					if (best_freq >= 100) {
+						best_freq -= 10;
+						applog(LOG_WARNING, "Brain: decreasing best frequency by 10, now it is %d MHz", best_freq);
+					}
+				}*/
+
+				if (did_inc) {
+					applog(LOG_WARNING, "Brain: last time we increment, setting best_freq to next freq.");
+					best_freq = -2;
+				}
+				if (did_dec) {
+					applog(LOG_WARNING, "Brain: last time we decrement, setting best_freq to next freq.");
+					best_freq = -2;
+				}
+				lastdec = curtime;
+				did_inc = false;
+				did_dec = true;
+				return -1;
+			}
+
+			if (need_increase(curtime)) {
+				lastinc = curtime;
+				did_inc = true;
+				did_dec = false;
+				return 1;
+			}
+			did_inc = false;
+			did_dec = false;
+		}
+		return 0;
+	}
+};
+
+cbrain brain;
 
 //tick the temp target brain
-void tt_tick(int fd, int cur_temp)
+void tt_tick(int fd, int cur_temp, int cur_err)
 {
 	UINT64 temp_curtime = GetTickCount64();
 	int n;
@@ -938,12 +1111,22 @@ void tt_tick(int fd, int cur_temp)
 	if (opt_temp_max == 0 || opt_freq_max == 0)
 		return;
 
+	if (opt_temp_shutdown != 0 && cur_temp > opt_temp_shutdown) {
+		applog(LOG_ERR, "Shutdown temp of %d (temp = %d) reached!  Shutting down immediately.",opt_temp_shutdown, cur_temp);
+		for (;;) {
+			fpga_freq_decrease(fd);
+			Sleep(100);
+			if (cur_freq <= 50)
+				proper_exit(55);
+		}
+	}
+
 	//add temp reading
 	temp_sum += cur_temp;
 	temp_num++;
 
 	//wait for at least one second
-	if (temp_curtime == temp_lasttime)
+	if ((temp_curtime - 1000) < temp_lasttime)
 		return;
 	temp_avg = temp_sum / temp_num;
 	temp_sum = 0;
@@ -990,6 +1173,7 @@ void tt_tick(int fd, int cur_temp)
 			temp_max_checktime2 = 0;
 		}
 	}
+
 }
 
 int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* hashes_done)
@@ -1017,17 +1201,20 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 	static char old_job_id[128]="error!";
 	static unsigned char old_wbuf[128]="";
 
-	less_difficult = true;
-	more_difficult = true;
+	//less_difficult = true;
+	//more_difficult = true;
 	memcpy(my_target, work->target, 32);
 	reverse((unsigned char*)my_target, 32);
-	my_target[7] = 0x01000000;
-	my_target[0] = 0;
-	my_target[6] = 0xFFFFFFFF;
+	
+	my_target[7] = 0x00000000;
+	my_target[6] = 0x7FFFFFFF;
 	my_target[1] = 0xFFFFFFFF;
+	my_target[0] = 0x00000000;
 
+	if (less_difficult)
+		my_target[6] <<= 1;
 	if (more_difficult)
-		my_target[7] = 0;
+		my_target[6] >>= 1;
 
 	unsigned char mid[64];
 
@@ -1041,10 +1228,18 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 	reverse(mid, 64);
 
+	uint32_t worktarget = ((my_target[7] & 0xFFFF) << 16) | ((my_target[6] & 0xFFFF0000) >> 16);
+
+	if (thr_info[thr_id].fpga_info.version < 2) {
+		worktarget >>= 16;
+	}
+
+	worktarget = bswap_32(worktarget);
+
 	memset(wbuf, 0, 84);
 	memcpy(wbuf, mid, 64);
 	memcpy(wbuf + 64, ((uint8_t*)endiandata) + 32, 16);
-	memcpy(wbuf + 80, &my_target[7], 4);
+	memcpy(wbuf + 80, &worktarget, 4);
 
 	wbuf[68] = work->xnonce2[4];
 	wbuf[67] = work->xnonce2[3];
@@ -1116,10 +1311,17 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 		if (r2) {
 			r2 = tolower(r2);
 			switch (r2) {
+			case '+':
+			case '-':
+				applog(LOG_INFO, "Clearing temp timers.");
+				temp_max_checktime = 0;
+				temp_max_checktime2 = 0;
+				break;
 			case 'c':
 				thr_info[thr_id].hw_err = 0;
 				thr_info[thr_id].solutions = 0;
 				thr_hashrates[thr_id] = 0;
+				solerr.clear();
 				applog(LOG_INFO, "Clearing solutions/errors.");
 				break;
 			}
@@ -1231,6 +1433,10 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 		memset(fstr, 0, 128);
 
+		static int es = 0, ss = 0;
+		static double ep = 0.0f;
+		int mytemp = 0;
+
 		if (is_health) {
 			uint32_t vv, tt;
 
@@ -1238,7 +1444,12 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 			tt = ((buf[5] << 4) | ((buf[6] & 0xF0) >> 4)) << 4;
 			vint = ((double)vv) / 65536.0f * 3.0f;
 			temp = (((double)tt) * 509.3140064f / 65536.0f) - 280.23087870f;
-			tt_tick(thr_info[thr_id].fd, (int)temp);
+			es = solerr.err_in_last_secs(60);
+			ss = solerr.sol_in_last_secs(60);
+			ep = ((es + ss) > 0) ? ((double)es * 100.0f / (double)(es + ss)) : 0.0f;
+			//printf("%d errors/%d sols in last 60 seconds (%.1f%%)\n", es, ss, ep);
+			//tt_tick(thr_info[thr_id].fd, (int)temp,ep);
+			mytemp = (int)temp;
 		}
 
 		if (is_health2) {
@@ -1271,29 +1482,54 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 				temp2 = (((double)tt2) * 509.3140064f / 65536.0f) - 280.23087870f;
 				temp3 = (((double)tt3) * 509.3140064f / 65536.0f) - 280.23087870f;
 			}
-			int es = solerr.err_in_last_secs(60);
-			int ss = solerr.sol_in_last_secs(60);
-			printf("%d errors/%d sols in last 60 seconds\n", es, ss);
-			tt_tick(thr_info[thr_id].fd, (int)(max(temp, max(temp2, temp3))));
+			es = solerr.err_in_last_secs(60);
+			ss = solerr.sol_in_last_secs(60);
+			ep = ((es + ss) > 0) ? ((double)es * 100.0f / (double)(es + ss)) : 0.0f;
+			//printf("%d errors/%d sols in last 60 seconds (%.1f%%)\n", es, ss, ep);
+			//tt_tick(thr_info[thr_id].fd, (int)(max(temp, max(temp2, temp3))), ep);
+			mytemp = (int)(max(temp, max(temp2, temp3)));
 		}
 
 		if (temp2 > 0.0f && temp3 > 0.0f)
-			sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc %dc %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, (int)temp2, (int)temp3, vint, hr, hr_unit, error_pct);
+			sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc %dc %dc" CL_YLW " %0.2fV " CL_LGR "%3.1f %cH/s" CL_N "] ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, (int)temp2, (int)temp3, vint, hr, hr_unit);
 		else
-			sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
+			sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc" CL_YLW " %0.2fV " CL_LGR "%3.1f %cH/s" CL_N "] ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, vint, hr, hr_unit);
 
 		if (is_health || is_health2) {
 			//sprintf(fstr, "[COM%d " CL_WHT "%s" CL_CYN " %dMHz" CL_MAG " %dc" CL_YLW " %0.2fV" CL_N "] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", thr_info[thr_id].com_port, active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
 			//sprintf(fstr, "[%s: %dMHz %dc %0.2fV] " CL_CYN "%3.1f %cH/s " CL_N "Err: %.1f%% ", active_dna, cur_freq, (int)temp, vint, hr, hr_unit, error_pct);
-			applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  Sol/Err: %d/%d" CL_N "", fstr, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			//applog(LOG_INFO, "%s" CL_WHT " Acc/Rej: %d/%d  [60s Sol/Err: %d/%d %.1f%%%%]" CL_N "", fstr, GetAcc(), GetRej(), thr_info[thr_id].solutions, thr_info[thr_id].hw_err);
+			//applog(LOG_INFO, "%s" CL_WHT "Acc/Rej: %d/%d [60s Sol/Err: %d/%d %.1f%%]" CL_N "", fstr, GetAcc(), GetRej(), ss, es, ep);
+
+			es = solerr.err_in_last_secs(30-2);
+			ss = solerr.sol_in_last_secs(30-2);
+			ep = ((es + ss) > 0) ? ((double)es * 100.0f / (double)(es + ss)) : 0.0f;
+
+			int es2 = solerr.err_in_last_secs(300);
+			int ss2 = solerr.sol_in_last_secs(300);
+			double ep2 = ((es2 + ss2) > 0) ? ((double)es2 * 100.0f / (double)(es2 + ss2)) : 0.0f;
+
+			int es3 = thr_info[thr_id].hw_err;
+			int ss3 = thr_info[thr_id].solutions;
+			double ep3 = ((es3 + ss3) > 0) ? ((double)es3 * 100.0f / (double)(es3 + ss3)) : 0.0f;
+
+			applog(LOG_INFO, "%s" CL_WHT "[Acc/Rej: %d/%d] [30s Sol/Err: %d/%d %.1f%%] [5m Sol/Err: %d/%d %.1f%%] [All Sol/Err: %d/%d %.1f%%]" CL_N "", fstr, GetAcc(), GetRej(), ss, es, ep, ss2, es2, ep2, ss3, es3, ep3);
+
+			int rr = brain.tick(mytemp, ep, ep2);
+
+			if(rr == 1)
+				fpga_freq_increase(thr_info[thr_id].fd);
+			if(rr == -1)
+				fpga_freq_decrease(thr_info[thr_id].fd);
+
 			continue;
 		}
 
 		if (is_acc || is_rej) {
 			if (is_rej)
-				applog(LOG_INFO, "%s" CL_LRD " Share %s." CL_N "", fstr, "Rejected");
+				applog(LOG_INFO, "%s" CL_LRD "Share %s." CL_N "", fstr, "Rejected");
 			else
-				applog(LOG_INFO, "%s" CL_GR2 " Share %s." CL_N "", fstr, "Accepted");
+				applog(LOG_INFO, "%s" CL_GR2 "Share %s." CL_N "", fstr, "Accepted");
 			is_acc = 0;
 			is_rej = 0;
 		}
@@ -1312,7 +1548,14 @@ int scanhash_eagle(int thr_id, struct work* work, uint32_t max_nonce, uint64_t* 
 
 		memcpy((char*)& nonce, buf, 8);
 
-		if (thr_info[thr_id].fpga_info.version == 2) {
+		if (thr_info[thr_id].fpga_info.version >= 4) {
+			nonce ^= 0xAAAAefbeaddeAAAAULL;
+
+			//reverse((uint8_t*)&nonce, 8);
+			//nonce += 43 * 18;
+			//reverse((uint8_t*)&nonce, 8);
+		}
+		else if (thr_info[thr_id].fpga_info.version >= 2) {
 			nonce ^= 0xAAAAAAAAAAAAAAAAULL;
 		}
 

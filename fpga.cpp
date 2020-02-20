@@ -45,6 +45,7 @@ struct {
 	{ ALGO_HTML, ALGOID_HTMLCOIN },
 	{ ALGO_EAGLE, ALGOID_EAGLE },
 	{ ALGO_KADENA, ALGOID_KADENA },
+	{ ALGO_HSD, ALGOID_HSD },
 	{ -1, -1 }
 };
 
@@ -67,6 +68,7 @@ struct algo_id_str_s algo_id_str[] = {
 	{ ALGOID_CRUZBIT,	"Cruzbit" },
 	{ ALGOID_EAGLE,		"EAGLE" },
 	{ ALGOID_KADENA,	"Kadena" },
+	{ ALGOID_HSD,	"Handshake" },
 	{ 0xFF, "" }
 };
 
@@ -509,7 +511,7 @@ uint64_t fpga_get_ident(int fd)
 	return ret;
 }
 
-static uint8_t *fpga_find_devices_by_path()
+static uint8_t * fpga_find_devices_by_path()
 {
 	HANDLE handle;
 	char path[64];

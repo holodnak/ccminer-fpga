@@ -1257,7 +1257,7 @@ static bool stratum_parse_extranonce(struct stratum_ctx *sctx, json_t *params, i
 			goto out;
 		}
 	}
-	if (xn2_size < 2 || xn2_size > 16) {
+	if (xn2_size < 2 || xn2_size > 24) {
 		applog(LOG_ERR, "Failed to get valid n2size in parse_extranonce (%d)", xn2_size);
 		goto out;
 	}
@@ -1394,14 +1394,54 @@ extern bool opt_extranonce;
 bool stratum_authorize(struct stratum_ctx *sctx, const char *user, const char *pass)
 {
 	json_t *val = NULL, *res_val, *err_val;
-	char *s, *sret;
+	char *s, *sret, *s2, *sret2, *s3, *sret3;
 	json_error_t err;
 	bool ret = false;
 
 	s = (char*)malloc(80 + strlen(user) + strlen(pass));
 	sprintf(s, "{\"id\": 2, \"method\": \"mining.authorize\", \"params\": [\"%s\", \"%s\"]}",
-	        user, pass);
+		user, pass);
 
+	s2 = (char*)malloc(80 + strlen(user) + strlen(pass));
+	sprintf(s2, "{\"id\": 2, \"method\": \"mining.add_user\", \"params\": [\"%s\", \"%s\"]}",
+		user, pass);
+
+	s3 = (char*)malloc(80 + strlen(user) + strlen(pass));
+	sprintf(s3, "{\"id\": 2, \"method\": \"mining.authorize_admin\", \"params\": [\"hunt\"]}",
+		user);
+
+	/*
+	if (!stratum_send_line(sctx, s3))
+		goto out;
+
+	while (1) {
+		sret3 = stratum_recv_line(sctx);
+		if (!sret3)
+			goto out;
+		if (!stratum_handle_method(sctx, sret3))
+			break;
+		free(sret3);
+		sret3 = 0;
+	}
+
+
+	if (!stratum_send_line(sctx, s2))
+		goto out;
+
+	while (1) {
+		sret2 = stratum_recv_line(sctx);
+		if (!sret2)
+			goto out;
+		if (!stratum_handle_method(sctx, sret2))
+			break;
+		free(sret2);
+		sret2 = 0;
+	}
+	
+	if(sret2)
+		printf("got %s\n", sret2);
+		*/
+	
 	if (!stratum_send_line(sctx, s))
 		goto out;
 
@@ -1514,10 +1554,17 @@ static uint32_t getblocheight(struct stratum_ctx *sctx)
 	return height;
 }
 
+void printDataFPGA(void* data, int size);
+void bswap(unsigned char* b, int len);
+
+static int rollingint = 0;
+volatile bool hns_notify = false;
+
 static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 {
 	const char *job_id, *prevhash, *coinb1, *coinb2, *version, * nbits, *stime;
 	const char *claim = NULL, *nreward = NULL;
+	const char* troot, * rroot;
 	size_t coinb1_size, coinb2_size;
 	bool clean, ret = false;
 	int merkle_count, i, p=0;
@@ -1530,6 +1577,56 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 	bool has_claim = !strcasecmp(algo, "lbry");
 
 	job_id = json_string_value(json_array_get(params, p++));
+
+	//handshake
+	if (!strcasecmp(algo, "hsd")) {
+		//applog(LOG_DEBUG, "Stratum notify: doing handshake mode.");
+
+		//hstratum/6block only!
+		prevhash = json_string_value(json_array_get(params, p++)); //1:prevhash
+		coinb1 = json_string_value(json_array_get(params, p++)); //2:merkle root
+		coinb2 = json_string_value(json_array_get(params, p++)); //witness root
+		troot = json_string_value(json_array_get(params, p++)); //tree root
+		rroot = json_string_value(json_array_get(params, p++)); //reserved root
+		version = json_string_value(json_array_get(params, p++));
+		nbits = json_string_value(json_array_get(params, p++));
+		stime = json_string_value(json_array_get(params, p++));
+		clean = true;
+
+		free(sctx->job.job_id);
+		sctx->job.job_id = strdup(job_id);
+
+		memset(sctx->job.zerohash, 0, 32);
+		hex2bin(sctx->job.prevhash, prevhash, 32);
+		hex2bin(sctx->job.merkleroot, coinb1, 32);
+		hex2bin(sctx->job.witnessroot, coinb2, 32);
+		hex2bin(sctx->job.treeroot, troot, 32);
+		hex2bin(sctx->job.reservedroot, rroot, 32);
+
+		hex2bin(sctx->job.version, version, 4);
+		hex2bin(sctx->job.nbits, nbits, 4);
+		hex2bin(sctx->job.ntime, stime, 4);
+
+		//bswap(sctx->job.nbits, 4);
+		//bswap(sctx->job.ntime, 4);
+
+		sctx->job.height = rollingint++;
+		sctx->job.clean = clean;
+		sctx->job.diff = sctx->next_diff;
+
+		
+		ret = true;
+		/*
+		printf("Stratum notify: previous hash  = "); printDataFPGA(sctx->job.prevhash, 32);
+		printf("Stratum notify: merkle hash    = "); printDataFPGA(sctx->job.merkleroot, 32);
+		printf("Stratum notify: witness hash   = "); printDataFPGA(sctx->job.witnessroot, 32);
+		printf("Stratum notify: tree hash      = "); printDataFPGA(sctx->job.treeroot, 32);
+		printf("Stratum notify: mask hash      = "); printDataFPGA(sctx->job.maskhash, 32);
+		printf("Stratum notify: reserved hash  = "); printDataFPGA(sctx->job.reservedroot, 32);
+		*/
+		hns_notify = true;
+		goto out;
+	}
 
 	//check for eagle algo
 	if (!strcasecmp(algo, "eagle")) {
@@ -1544,8 +1641,8 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 		//applog(LOG_DEBUG, "Stratum notify: height        = %d", height);
 		//applog(LOG_DEBUG, "Stratum notify: clean job     = %d", clean);
 
-		if (strncmp(coinb1, "0x",2) == 0)			coinb1 += 2;
-		if (strncmp(coinb2, "0x",2) == 0)			coinb2 += 2;
+		if (strncmp(coinb1, "0x", 2) == 0)			coinb1 += 2;
+		if (strncmp(coinb2, "0x", 2) == 0)			coinb2 += 2;
 
 		free(sctx->job.job_id);
 		sctx->job.job_id = strdup(job_id);
@@ -1582,6 +1679,7 @@ static bool stratum_notify(struct stratum_ctx *sctx, json_t *params)
 
 		free(sctx->job.job_id);
 		sctx->job.job_id = strdup(job_id);
+
 		hex2bin(sctx->job.kda, coinb1, 286);
 		sctx->job.height = (uint32_t)*((uint64_t*)(((uint8_t*)sctx->job.kda)+258));
 		sctx->job.clean = clean;
@@ -1702,6 +1800,7 @@ static bool stratum_set_difficulty(struct stratum_ctx *sctx, json_t *params)
 	if (diff <= 0.0)
 		return false;
 
+	//applog(LOG_WARNING, "Pool difficuly target: %f", diff);
 	pthread_mutex_lock(&stratum_work_lock);
 	sctx->next_diff = diff;
 	pthread_mutex_unlock(&stratum_work_lock);
@@ -1958,13 +2057,17 @@ static bool stratum_unknown_method(struct stratum_ctx *sctx, json_t *id)
 }
 
 extern uint64_t odocrypt_current_key;
+extern volatile int num_submits, num_rejects, num_shares;
+extern volatile char reject_reason[512];
 
 bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 {
-	json_t *val, *id, *params, *odokey;
+	json_t *val, *id, *params, *odokey, *pkey;
 	json_error_t err;
 	const char *method;
 	bool ret = false;
+
+	//applog(LOG_WARNING, "RAW JSON: %s", s);
 
 	val = JSON_LOADS(s, &err);
 	if (!val) {
@@ -1973,8 +2076,37 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	}
 
 	method = json_string_value(json_object_get(val, "method"));
-	if (!method)
+	if (!method) {
+		char abuf[32] = "";
+
+		get_currentalgo(abuf, 32);
+		if (!json_string_value(json_object_get(val, "method")) && !strncasecmp(abuf,"hsd",3)) {
+			pkey = json_object_get(val, "id");
+			odokey = json_object_get(val, "error");
+			const char* di = json_string_value(json_array_get(odokey, 0));
+			const char* ds = json_string_value(json_array_get(odokey, 1));
+			if (di && !strncasecmp(di, "invalid", 7)) {
+				num_shares++;
+			}
+			else if(ds && !strncasecmp(ds, "high-hash", 9)) {
+				//num_shares++;
+				num_rejects++;
+			}
+			else if (ds) {
+				//rejected
+				num_rejects++;
+				strcpy((char*)reject_reason, ds);
+			}
+			else if (!json_string_value(odokey)) {
+				const char* cstrs = json_string_value(pkey);
+				if(cstrs && strlen(cstrs) >= 8)
+					num_shares++;
+			}
+			//printf("result: %s\n", di);
+			//printf("result: %s\n", ds);
+		}
 		goto out;
+	}
 	id = json_object_get(val, "id");
 	params = json_object_get(val, "params");
 
@@ -2006,9 +2138,7 @@ bool stratum_handle_method(struct stratum_ctx *sctx, const char *s)
 	if (!strcasecmp(method, "mining.set_target")) {
 		sctx->is_equihash = true;
 
-		const char *ds = json_string_value(json_array_get(params, 0));
-
-		applog(LOG_WARNING, "Pool difficuly target: %s",ds);
+		const char* ds = json_string_value(json_array_get(params, 0));
 
 		hex2bin(sctx->job.claim, ds, 32);
 

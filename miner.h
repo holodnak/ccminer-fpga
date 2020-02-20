@@ -677,6 +677,12 @@ struct stratum_job {
 	char *job_id;
 	unsigned char headhash[32];
 	unsigned char prevhash[32];
+	unsigned char zerohash[32];
+	unsigned char merkleroot[32];
+	unsigned char witnessroot[32];
+	unsigned char treeroot[32];
+	unsigned char maskhash[32];
+	unsigned char reservedroot[32];
 	size_t coinbase_size;
 	unsigned char *coinbase;
 	unsigned char *xnonce2;
@@ -686,12 +692,14 @@ struct stratum_job {
 	unsigned char nbits[4];
 	unsigned char ntime[4];
 	unsigned char claim[32]; // lbry
+	uint64_t ntime64;
 	bool clean;
 	unsigned char nreward[2];
 	uint32_t height;
 	uint32_t shares_count;
 	double diff;
 	unsigned char kda[512];
+	unsigned char extranonce[32];
 };
 
 struct stratum_ctx {
@@ -732,9 +740,12 @@ struct tx {
 
 #define MAX_NONCES 2
 struct work {
-	uint32_t data[48];
+	uint32_t submitdata[256];
+	uint32_t data[256];
+	uint32_t hsd[256];
 	uint32_t target[8], my_target[8];
 	uint32_t maxvote;
+	uint8_t mask[64];
 
 	char job_id[128];
 	size_t xnonce2_len;

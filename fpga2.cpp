@@ -120,8 +120,8 @@ int fpga2_find_devices(int algo_id, int single_port)
 	sp[0] = (uint8_t)single_port;
 	if (single_port != -1)
 		comports = sp;
-	else
-		comports = fpga2_find_com_ports(buf);
+	//else
+	//	comports = fpga2_find_com_ports(buf);
 
 	if (num_devices > 0 || cur_device != -1) {
 		printf("fpga2_find_devices:  this should only be called once!!  error!!");

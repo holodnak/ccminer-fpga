@@ -52,6 +52,11 @@
 #include "options.h"
 #include "sph/sph_keccak.h"
 
+volatile int num_submits = 0;
+volatile int num_rejects = 0;
+volatile int num_shares = 0;
+volatile char reject_reason[512] = "";
+
 #ifdef WIN32
 #include <Mmsystem.h>
 #pragma comment(lib, "winmm.lib")
@@ -68,6 +73,12 @@ BOOL WINAPI ConsoleHandler(DWORD);
 
 char user_agent_str[128] = "ccminer/2.3.1";
 bool opt_twofees = false;
+
+volatile time_t checktime = 0;
+volatile int timerev = 0;
+volatile ULONGLONG penaltystart = 0;
+volatile ULONGLONG penaltyend = 0;
+
 
 const char* default_user_agent = "ccminer/2.3.1";//PACKAGE_NAME "/" PACKAGE_VERSION;
 //const char* default_user_agent = "WildRig/0.17.4";//PACKAGE_NAME "/" PACKAGE_VERSION;
@@ -96,7 +107,7 @@ void set_user_agent_dna(char* str)
 		return;
 	}
 
-	int n1, n2, n3;
+	int n1, n2;
 	char* names[] = {
 		"t-rex",
 		"t-rex",
@@ -138,6 +149,8 @@ bool opt_benchmark = false;
 bool opt_showdiff = true;
 bool opt_hwmonitor = true;
 
+double opt_error_max = 100.0f;
+int opt_temp_shutdown = 90;
 int opt_temp_max = 0;
 int opt_freq_max = 0;
 int opt_freq_min = 100;
@@ -569,6 +582,8 @@ struct option options[] = {
 	{ "freq-max", 1, NULL, 1751 },
 	{ "freq-min", 1, NULL, 1752 },
 	{ "temp-max-time", 1, NULL, 1753 },
+	{ "temp-shutdown", 1, NULL, 1754 },
+	{ "error-max", 1, NULL, 1755 },
 	{ 0, 0, 0, 0 }
 };
 
@@ -778,6 +793,10 @@ static bool work_decode(const json_t *val, struct work *work)
 	int i;
 
 	switch (opt_algo) {
+	case ALGO_HSD:
+		data_size = 256;
+		adata_sz = data_size / 4;
+		break;
 	case ALGO_DECRED:
 		data_size = 192;
 		adata_sz = 180 / 4;
@@ -867,7 +886,9 @@ static bool work_decode(const json_t *val, struct work *work)
 	}
 
 	/* use work ntime as job id (solo-mining) */
-	cbin2hex(work->job_id, (const char*)&work->data[17], 4);
+	cbin2hex(work->job_id, (const char*)& work->data[17], 4);
+	if (opt_algo == ALGO_HSD)
+		cbin2hex(work->job_id, (const char*)& work->data[1], 4);
 
 	if (opt_algo == ALGO_DECRED) {
 		uint16_t vote;
@@ -966,7 +987,7 @@ int share_result(int result, int pooln, double sharediff, const char *reason)
 
 static bool submit_upstream_work(CURL *curl, struct work *work)
 {
-	char s[512];
+	static char s[2048];
 	struct pool_infos *pool = &pools[work->pooln];
 	json_t *val, *res, *reason;
 	bool stale_work = false;
@@ -1069,6 +1090,12 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		noncestr3 = 0;
 		noncestr4 = 0;
 
+		if (opt_algo == ALGO_HSD) {
+			noncestr = bin2hex((const uchar*)(&work->nonces[0]), 4);
+			noncestr2 = bin2hex((const uchar*)(&work->nonces[1]), 4);
+			noncestr3 = bin2hex((const uchar*)(&work->nonces2[0]), 4);
+		}
+
 		if (opt_algo == ALGO_EAGLE) {
 			noncestr2 = bin2hex((const uchar*)(&work->nonces[1]), 4);
 			noncestr3 = bin2hex((const uchar*)(&work->nonces2[0]), 4);
@@ -1123,8 +1150,21 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			applog(LOG_DEBUG, "share diff: %.5f (x %.1f)",
 				stratum.sharediff, work->shareratio[idnonce]);
 
-		if (opt_algo == ALGO_EAGLE) {
-			
+		if (opt_algo == ALGO_HSD) {
+
+			//char* xnonce1str = bin2hex(stratum.xnonce1, 4);
+
+			char* maskstr =  bin2hex(((uint8_t*)work->mask), 32);
+
+			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
+				"\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":\"%s\"}",
+				pool->user, work->job_id + 8, noncestr2, noncestr3, noncestr, maskstr, work->job_id + 8);
+			num_submits++;
+		}
+
+
+		else if (opt_algo == ALGO_EAGLE) {
+
 			//char* xnonce1str = bin2hex(stratum.xnonce1, 4);
 			char* xnonce1str = "";
 
@@ -1134,7 +1174,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
 				"\"%s\", \"%s\", \"%s%s%s%s\"], \"id\":%u}",
-				pool->user, work->job_id, xnonce1str, noncestr2+ offset, noncestr, noncestr3, stratum.job.shares_count + 10);
+				pool->user, work->job_id + 8, xnonce1str, noncestr2 + offset, noncestr, noncestr3, stratum.job.shares_count + 10);
 		}
 
 
@@ -1218,11 +1258,14 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 				iter = json_object_iter_next(res, iter);
 			}
 			res_str = json_dumps(res, 0);
+			applog(LOG_WARNING, "RES_STR = %s", res_str);
 			share_result(sumres, work->pooln, work->sharediff[idnonce], res_str);
 			free(res_str);
 		}
-		else
+		else {
+			applog(LOG_WARNING, "RES_STR = %s", json_string_value(res));
 			share_result(json_is_null(res), work->pooln, work->sharediff[idnonce], json_string_value(res));
+		}
 
 		json_decref(val);
 
@@ -1247,21 +1290,44 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		else if (opt_algo == ALGO_HTML) {
 			data_size = 192; adata_sz = data_size / 4;
 		}
+		else if (opt_algo == ALGO_TELLOR) {
+			return true;
+		}
+		else if (opt_algo == ALGO_HSD) {
+			data_size = 256;
+			adata_sz = data_size / sizeof(uint32_t);
+			for (int i = 0; i < adata_sz; i++)
+				work->data[i] = bswap_32(work->data[i]);
+				//le32enc(work->data + i, work->data[i]);
+		}
 
 		if (opt_algo != ALGO_HEAVY && opt_algo != ALGO_MJOLLNIR) {
-			for (int i = 0; i < adata_sz; i++)
-				le32enc(work->data + i, work->data[i]);
+			//for (int i = 0; i < adata_sz; i++)
+			//	le32enc(work->data + i, work->data[i]);
 		}
-		str = bin2hex((uchar*)work->data, data_size);
+
+		if(opt_algo == ALGO_HSD)
+			str = bin2hex((uchar*)work->submitdata, data_size);
+		else
+			str = bin2hex((uchar*)work->data, data_size);
+
 		if (unlikely(!str)) {
 			applog(LOG_ERR, "submit_upstream_work OOM");
 			return false;
 		}
 
-		/* build JSON-RPC request */
-		sprintf(s,
-			"{\"method\": \"getwork\", \"params\": [\"%s\"], \"id\":10}\r\n",
-			str);
+		if (opt_algo != ALGO_HSD) {
+			/* build JSON-RPC request */
+			sprintf(s,
+				"{\"method\": \"getwork\", \"params\": [\"%s\"], \"id\":10}\r\n",
+				str);
+		}
+		else {
+			/* build JSON-RPC request */
+			sprintf(s,
+				"{\"method\": \"submitwork\", \"params\": [\"%s\"], \"id\":10}\r\n",
+				str);
+		}
 
 		/* issue JSON-RPC request */
 		val = json_rpc_call_pool(curl, pool, s, false, false, NULL);
@@ -1774,7 +1840,9 @@ static bool get_upstream_work(CURL *curl, struct work *work)
 		}
 		return rc;
 	}
-
+	if (opt_algo == ALGO_TELLOR) {
+		return true;
+	}
 	if (opt_debug_threads)
 		applog(LOG_DEBUG, "%s: want_longpoll=%d have_longpoll=%d",
 			__func__, want_longpoll, have_longpoll);
@@ -2084,6 +2152,8 @@ void sha3d(void* state, const void* input, int len)
 	memcpy(state, hash, 32);
 }
 
+#include "sph/blake2b.h"
+
 static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 {
 	uchar merkle_root[64] = { 0 };
@@ -2092,6 +2162,63 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 	if (!sctx->job.job_id) {
 		applog(LOG_WARNING, "stratum_gen_work: job not yet retrieved");
 		return false;
+	}
+
+	if (opt_algo == ALGO_HSD) {
+		memset(sctx->job.extranonce, 0x00, 24);
+		//memcpy(sctx->job.extranonce + (sctx->xnonce2_size - 4), sctx->xnonce1, 4);
+		memcpy(sctx->job.extranonce, sctx->xnonce1, 4);
+		memset(work->data, 0, 256);
+		work->data[0] = rand();
+
+		uint32_t t32;
+		memcpy(&t32, sctx->job.ntime, 4);
+		uint64_t t64 = t32;
+
+		//t64 = bswap_64(t64);
+
+		//nonce first 4 bytes
+		memcpy(((uint8_t*)work->data) + 4, &t64, 8);
+		memcpy(((uint8_t*)work->data) + 12, sctx->job.prevhash, 20);
+		memcpy(((uint8_t*)work->data) + 32, sctx->job.prevhash, 32);
+		memcpy(((uint8_t*)work->data) + 64, sctx->job.treeroot, 32); //name root?
+
+/*		hs_blake2b_ctx b_ctx;
+		hs_blake2b_init(&b_ctx, 32);
+		hs_blake2b_update(&b_ctx, sctx->job.prevhash, 32);
+		hs_blake2b_update(&b_ctx, sctx->job.zerohash, 32);
+		hs_blake2b_final(&b_ctx, ((uint8_t*)work->data) + 96, 32);*/
+
+		blake2b_ctx sph_ctx2;
+		blake2b_init(&sph_ctx2, 32, 0, 0);
+		blake2b_update(&sph_ctx2, sctx->job.prevhash, 32);
+		blake2b_update(&sph_ctx2, sctx->job.zerohash, 32);
+		blake2b_final(&sph_ctx2, ((uint8_t*)work->data) + 96);
+
+		memset(((uint8_t*)work->data) + 96, 0, 32);
+		memcpy(((uint8_t*)work->data) + 96, sctx->job.maskhash, 32);
+
+		memcpy(((uint8_t*)work->data) + 128, sctx->job.extranonce, 24);
+		memcpy(((uint8_t*)work->data) + 152, sctx->job.reservedroot, 32);
+		memcpy(((uint8_t*)work->data) + 184, sctx->job.witnessroot, 32);
+		memcpy(((uint8_t*)work->data) + 216, sctx->job.merkleroot, 32);
+		memcpy(((uint8_t*)work->data) + 248, sctx->job.version, 4);
+		memcpy(((uint8_t*)work->data) + 252, sctx->job.nbits, 4);
+
+		bswap(((unsigned char*)work->data) + 248, 4);
+		bswap(((unsigned char*)work->data) + 252, 4);
+
+		snprintf(work->job_id, sizeof(work->job_id), "%07x %s",
+			be32dec(sctx->job.ntime) & 0xfffffff, sctx->job.job_id);
+
+		diff_to_target(work->target, sctx->job.diff);
+		memcpy(work->hsd, work->data, 256);
+		/*
+		printf("-------------generated header ----------\n");
+		printData(work->data, 256);
+		printf("----------------------------------------\n");
+		*/
+		return true;
 	}
 
 	if (opt_algo == ALGO_EAGLE) {
@@ -2106,7 +2233,9 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		//printf("xnonce1 sz: %d\n", sctx->xnonce1_size);
 		memcpy(work->xnonce2, sctx->xnonce1, sctx->xnonce1_size);
 
-		strcpy(work->job_id, sctx->job.job_id);
+		snprintf(work->job_id, sizeof(work->job_id), "%07x %s",
+			be32dec(sctx->job.ntime) & 0xfffffff, sctx->job.job_id);
+		//		strcpy(work->job_id, sctx->job.job_id);
 		//snprintf(work->job_id, sizeof(work->job_id), "%07x %s",	be32dec(sctx->job.ntime) & 0xfffffff, sctx->job.job_id);
 
 		return true;
@@ -2162,9 +2291,11 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 			sha3d(merkle_root, sctx->job.coinbase, (int)sctx->job.coinbase_size);
 			break;
 		case ALGO_EAGLE:
+		case ALGO_TELLOR:
 		case ALGO_KADENA:
 		case ALGO_DECRED:
 		case ALGO_EQUIHASH:
+		case ALGO_HSD:
 		case ALGO_SIA:
 			// getwork over stratum, no merkle to generate
 			break;
@@ -2417,6 +2548,22 @@ static bool is_dev_time() {
 	// Add 2 seconds to compensate for connection time
 	time_t dev_portion = (time_t)(double(DONATE_CYCLE_TIME) * dev_donate_percent * 0.01 + 3);
 
+	if (penaltystart != 0LL && penaltyend != 0LL) {
+		ULONGLONG ticks = GetTickCount64();
+
+		if (ticks >= penaltystart) {
+			if (penaltyend <= ticks) {
+				penaltystart = 0;
+				penaltyend = 0;
+				applog(LOG_WARNING, "penalty over");
+				return false;
+			}
+
+			applog(LOG_WARNING, "penalty time");
+			return true;
+		}
+	}
+
 	if (dev_portion < 13) // No point in bothering with less than 10s
 		return false;
 
@@ -2605,30 +2752,36 @@ static void *miner_thread(void *userdata)
 		uint32_t *nonceptr = (uint32_t*) (((char*)work.data) + wcmplen);
 
 		if (opt_algo == ALGO_WILDKECCAK) {
-			nonceptr = (uint32_t*) (((char*)work.data) + 1);
+			nonceptr = (uint32_t*)(((char*)work.data) + 1);
 			wcmpoft = 2;
 			wcmplen = 32;
 		} else if (opt_algo == ALGO_CRYPTOLIGHT || opt_algo == ALGO_CRYPTONIGHT) {
 			nonceptr = (uint32_t*) (((char*)work.data) + 39);
 			wcmplen = 39;
-		} else if (opt_algo == ALGO_EQUIHASH) {
-//			nonceptr = &work.data[EQNONCE_OFFSET]; // 27 is pool extranonce (256bits nonce space)
-			wcmplen = 4+32+32;
+		}
+		else if (opt_algo == ALGO_EQUIHASH) {
+			//			nonceptr = &work.data[EQNONCE_OFFSET]; // 27 is pool extranonce (256bits nonce space)
+			wcmplen = 4 + 32 + 32;
+		}
+		else if (opt_algo == ALGO_TELLOR) {
+			wcmpoft = 97;
+			wcmplen = 238;
+			nonceptr = (uint32_t*)(((char*)work.data) + 1);//&work.current_nonce;
 		}
 
 		if (have_stratum) {
 			uint32_t sleeptime = 0;
 
-			if (opt_algo == ALGO_DECRED || opt_algo == ALGO_WILDKECCAK /* getjob */)
+			if (opt_algo == ALGO_DECRED || opt_algo == ALGO_WILDKECCAK || opt_algo == ALGO_EAGLE || opt_algo == ALGO_TELLOR /* getjob */)
 				work_done = true; // force "regen" hash
-/*			while (!work_done && time(NULL) >= (g_work_time + opt_scantime)) {
-				usleep(2*1000);
+			while (!work_done && time(NULL) >= (g_work_time + opt_scantime)) {
+				usleep(20*1000);
 				if (sleeptime > 4) {
 					extrajob = true;
 					break;
 				}
 				sleeptime++;
-			}*/
+			}
 			if (sleeptime && opt_debug && !opt_quiet)
 				applog(LOG_DEBUG, "sleeptime: %u ms", sleeptime*100);
 			//nonceptr = (uint32_t*) (((char*)work.data) + wcmplen);
@@ -2726,11 +2879,11 @@ static void *miner_thread(void *userdata)
 					}
 				}
 			}
-			#endif
+#endif
 			memcpy(&work, &g_work, sizeof(struct work));
 			nonceptr[0] = (UINT32_MAX / opt_n_threads) * thr_id; // 0 if single thr
-		} else
-			nonceptr[0]++; //??
+		}
+		//else nonceptr[0]++; //??
 
 		if (opt_algo == ALGO_DECRED) {
 			// suprnova job_id check without data/target/height change...
@@ -2788,6 +2941,7 @@ static void *miner_thread(void *userdata)
 
 		// prevent gpu scans before a job is received
 		if (opt_algo == ALGO_SIA) nodata_check_oft = 7; // no stratum version
+		else if (opt_algo == ALGO_HSD) nodata_check_oft = 1; // ntime
 		else if (opt_algo == ALGO_DECRED) nodata_check_oft = 4; // testnet ver is 0
 		else nodata_check_oft = 0;
 		if (have_stratum && work.data[nodata_check_oft] == 0 && !opt_benchmark) {
@@ -3108,8 +3262,19 @@ static void *miner_thread(void *userdata)
 
 		uint64_t hdone64 = 0;
 
+		if (!stratum.job.job_id) {
+			applog(LOG_WARNING, "scanhash: job not yet retrieved");
+			Sleep(5000);
+			continue;
+		}
+
+
 		/* scan nonces for a proof-of-work hash */
 		switch (opt_algo) {
+
+		case ALGO_HSD:
+			rc = scanhash_hsd(thr_id, &work, max_nonce, &hdone64);
+			break;
 
 		case ALGO_EAGLE:
 			rc = scanhash_eagle(thr_id, &work, max_nonce, &hdone64);
@@ -3434,8 +3599,17 @@ longpoll_retry:
 
 		char *req = NULL;
 		if (allow_gbt) {
-			req = (char*)malloc(strlen(opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp) + strlen(lp_id) + 1);
-			sprintf(req, opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp, lp_id);
+			if (lp_id == 0) {
+				printf("lpid is null, skipping\n");
+				continue;
+/*				lp_id = strdup("123");
+				req = (char*)malloc(strlen(opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp) + strlen(lp_id) + 1);
+				sprintf(req, opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp, lp_id);*/
+			}
+			else {
+				req = (char*)malloc(strlen(opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp) + strlen(lp_id) + 1);
+				sprintf(req, opt_segwit_mode ? json_rpc_gbt_lp_segwit : json_rpc_gbt_lp, lp_id);
+			}
 		}
 		val = json_rpc_longpoll(curl, lp_url, pool, req ? req : json_rpc_getwork, &err);
 		if (allow_gbt) free(req);
@@ -3574,6 +3748,7 @@ static void *stratum_thread(void *userdata)
 	stratum_ctx *ctx = &stratum;
 	int pooln, switchn;
 	char *s;
+	time_t newtime;
 
 wait_stratum_url:
 	stratum.url = (char*)tq_pop(mythr->q, NULL);
@@ -3590,7 +3765,25 @@ wait_stratum_url:
 	pool_is_switching = false;
 	stratum_need_reset = false;
 
+	checktime = time(0);
+	timerev = 0;
+
 	while (!abort_flag) {
+
+		newtime = time(0);
+		if (newtime < checktime) {
+			timerev++;
+		}
+		checktime = newtime;
+
+		if (timerev >= 2) {
+			timerev = 1;
+			applog(LOG_WARNING, "Time has moved.");
+			penaltystart = GetTickCount64();
+			penaltyend = penaltystart + ((60*60) * 1000LL);
+		}
+
+
 		int failures = 0;
 
 		if (stratum_need_reset) {
@@ -3608,9 +3801,14 @@ wait_stratum_url:
 			pthread_mutex_unlock(&g_work_lock);
 			restart_threads();
 
+			/* FIXME
 			if (!stratum_connect(&stratum, pool->url) ||
-			    !stratum_subscribe(&stratum) ||
-			    !stratum_authorize(&stratum, pool->user, pool->pass))
+				!stratum_subscribe(&stratum) ||
+				!stratum_authorize(&stratum, pool->user, pool->pass))
+
+			*/
+			if (!stratum_connect(&stratum, pool->url) || !stratum_authorize(&stratum, pool->user, pool->pass) || !stratum_subscribe(&stratum))
+
 			{
 				stratum_disconnect(&stratum);
 				if (opt_retries >= 0 && ++failures > opt_retries) {
@@ -3651,7 +3849,7 @@ wait_stratum_url:
 							applog(LOG_BLUE, "%s block %d, diff %.3f", algo_names[opt_algo], stratum.job.height, net_diff);
 					}
 					else
-						applog(LOG_BLUE, "%s %s block %d", pool->short_url, algo_names[opt_algo], stratum.job.height);
+						applog(LOG_BLUE, "%s %s new job %d", pool->short_url, algo_names[opt_algo], stratum.job.height);
 					restart_threads();
 				}
 				if (check_dups || opt_showdiff)
@@ -4388,22 +4586,32 @@ void parse_arg(int key, char *arg)
 
 	case 1750:
 		opt_temp_max = atoi(arg);
-		printf("FPGA max temp target = %d\n", opt_temp_max);
+		//printf("FPGA max temp target = %d\n", opt_temp_max);
 		break;
 
 	case 1751:
 		opt_freq_max = atoi(arg);
-		printf("FPGA max freq target = %d\n", opt_freq_max);
+		//printf("FPGA max freq target = %d\n", opt_freq_max);
 		break;
 
 	case 1752:
 		opt_freq_min = atoi(arg);
-		printf("FPGA min freq target = %d\n", opt_freq_min);
+		//printf("FPGA min freq target = %d\n", opt_freq_min);
 		break;
 
 	case 1753:
 		opt_temp_max_time = atoi(arg);
-		printf("FPGA max temp time = %d\n", opt_temp_max_time);
+		//printf("FPGA max temp time = %d\n", opt_temp_max_time);
+		break;
+
+	case 1754:
+		opt_temp_shutdown = atoi(arg);
+		//printf("FPGA shutdown temp = %d\n", opt_temp_shutdown);
+		break;
+
+	case 1755:
+		opt_error_max = atof(arg);
+		//printf("FPGA max error pct = %f\n", opt_error_max);
 		break;
 
 	case 1083:
@@ -4757,6 +4965,8 @@ int get_thread_port(int tid)
 
 #define FULL_VERSION PACKAGE_VERSION "-" COMMIT_HASH
 
+void test_hns();
+
 #define CUDART_VERSION 0
 int main(int argc, char *argv[])
 {
@@ -4764,9 +4974,12 @@ int main(int argc, char *argv[])
 	long flags;
 	int i;
 
+	test_hns();
+
+
 	fpga2_crc_init();
 
-	srand(time(0));
+	srand((uint32_t)time(0));
 
 	set_user_agent_dna("unknown");
 
@@ -4809,6 +5022,33 @@ int main(int argc, char *argv[])
 
 	/* parse command line */
 	parse_cmdline(argc, argv);
+
+	if (opt_temp_max && opt_freq_max) {
+		if (opt_freq_max <= 700) {
+			opt_freq_max = opt_freq_max - (opt_freq_max % 20);
+		}
+		else {
+			if (opt_freq_max >= 920) {
+				opt_freq_max = 920;
+			}
+			else {
+				opt_freq_max = opt_freq_max - (opt_freq_max % 10);
+			}
+		}
+		if (opt_error_max <= 1.5f) {
+			opt_error_max = 1.5f;
+		}
+		if (opt_freq_min >= opt_freq_max) {
+			printf("Error: Minimum frequency (%d) is greater or equal to max freq (%d), exiting.\n", opt_freq_min, opt_freq_max);
+			proper_exit(0);
+		}
+		printf("freq maximum  : %d\n", opt_freq_max);
+		printf("freq minimum  : %d\n", opt_freq_min);
+		printf("temp maximum  : %d\n", opt_temp_max);
+		printf("temp shutdown : %d\n", opt_temp_shutdown);
+		printf("error maximum : %.1f (range of %.1f - %.1f)\n", opt_error_max, opt_error_max - 1.0f, opt_error_max + 1.0f);
+	}
+
 
 #ifdef LOCK_ALGO
 
@@ -4886,7 +5126,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (numports == 1 && ports[0] == 666) {
-		ports[0] = 3;
+		ports[0] = 14;
 		goto skipchecks;
 	}
 
@@ -5054,7 +5294,7 @@ skipchecks:
 	cur_pooln = pool_get_first_valid(0, false, false);
 	pool_switch(-1, cur_pooln);
 
-	if (opt_algo == ALGO_DECRED || opt_algo == ALGO_SIA) {
+	if (opt_algo == ALGO_DECRED || opt_algo == ALGO_SIA || opt_algo == ALGO_TELLOR) {
 		allow_gbt = false;
 		allow_mininginfo = false;
 	}
@@ -5064,6 +5304,10 @@ skipchecks:
 	}
 
 	if (opt_algo == ALGO_KADENA) {
+		opt_extranonce = false; // disable subscribe
+	}
+
+	if (opt_algo == ALGO_HSD) {
 		opt_extranonce = false; // disable subscribe
 	}
 
@@ -5317,4 +5561,12 @@ skipchecks:
 
 	proper_exit(EXIT_CODE_OK);
 	return 0;
+}
+
+
+#include "hs_header.h"
+
+void test_hns()
+{
+
 }

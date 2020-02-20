@@ -43,6 +43,9 @@
     <Filter Include="Source Files\sia">
       <UniqueIdentifier>{86a896c0-1688-4854-98e0-285d166069a3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hsd">
+      <UniqueIdentifier>{71ee82e8-a8c4-4dee-afb3-afb3f18e388d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="compat\jansson\dump.c">
@@ -286,6 +289,18 @@
     <ClCompile Include="ftdi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="scan_hsd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hs_sha3.c">
+      <Filter>Source Files\hsd</Filter>
+    </ClCompile>
+    <ClCompile Include="hs_header.cpp">
+      <Filter>Source Files\hsd</Filter>
+    </ClCompile>
+    <ClCompile Include="hs_utils.c">
+      <Filter>Source Files\hsd</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="algos.h">
@@ -465,6 +480,21 @@
     <ClInclude Include="odo\odocrypt.h" />
     <ClInclude Include="ftdi.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hs_sha3.h">
+      <Filter>Source Files\hsd</Filter>
+    </ClInclude>
+    <ClInclude Include="hs_error.h">
+      <Filter>Source Files\hsd</Filter>
+    </ClInclude>
+    <ClInclude Include="hs_header.h">
+      <Filter>Source Files\hsd</Filter>
+    </ClInclude>
+    <ClInclude Include="hs_utils.h">
+      <Filter>Source Files\hsd</Filter>
+    </ClInclude>
+    <ClInclude Include="hs_bio.h">
+      <Filter>Source Files\hsd</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

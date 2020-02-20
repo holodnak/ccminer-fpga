@@ -29,10 +29,13 @@ pool_info_t devpools[] = {/*
 	{ ALGO_ODO,         "stratum+tcp://devfee2.nesemu2.com:3333",               "D8zByH738NezJWUe8HLfM1C5ehZgLkzsDj",       "c=DGB" },  //fabio
 	{ ALGO_BSHA3,       "stratum+tcp://devfee1.nesemu2.com:3334",               "caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",       "x" },  //fabio
 	{ ALGO_BSHA3,       "stratum+tcp://devfee2.nesemu2.com:3334",               "caHEoaJMkDYTSFrxeC8JKkXE6FCwDS7Rsg",       "x" },  //fabio
+	{ ALGO_EAGLE,       "stratum+tcp://us-solo-ckb.2miners.com:6868",           "ckb1qyq00qynyy0tgmd36rn8xed5rh02scwmkfms0vt6mc",       "x" },  //fabio
 	{ ALGO_EAGLE,       "stratum+tcp://us-ckb.2miners.com:6565",                "ckb1qyq00qynyy0tgmd36rn8xed5rh02scwmkfms0vt6mc",       "x" },  //fabio
 	{ ALGO_EAGLE,       "stratum+tcp://ckb.stratum.hashpool.com:4300",          "ckb1qyq00qynyy0tgmd36rn8xed5rh02scwmkfms0vt6mc",       "x" },  //fabio
 	{ (1<<16)|ALGO_EAGLE,"stratum+tcp://us-ckb.2miners.com:6565",               "ckb1qyqtzguhw6ha79pvq2yrg5f0vepc9lgd78jqc58845",       "x" },  //??
 	{ ALGO_KADENA,      "stratum+tcp://kda-us.icemining.ca:3700",               "b3db80cd157eee8e48090287bc10300f7a7a6872959441cf736f8fb7a84933f1",       "x" },  //fabio
+	{ ALGO_HSD,         "stratum+tcp://handshake.6block.com:7701",              "devfee10",       "x" },  //fabio
+	{ ALGO_HSD,         "stratum+tcp://handshake.6block.com:1314",              "devfee15",       "x" },  //fabio
 	{0,0,0,0}
 };
 

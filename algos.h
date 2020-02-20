@@ -27,6 +27,7 @@ enum sha_algos {
 	ALGO_HEAVY,		/* Heavycoin hash */
 	ALGO_HMQ1725,
 	ALGO_HONEYCOMB,
+	ALGO_HSD,
 	ALGO_HSR,
 	ALGO_HTML,
 	ALGO_KECCAK,
@@ -61,6 +62,7 @@ enum sha_algos {
 	ALGO_SKEIN2,
 	ALGO_SKUNK,
 	ALGO_S3,
+	ALGO_TELLOR,
 	ALGO_TIMETRAVEL,
 	ALGO_TRIBUS,
 	ALGO_BITCORE,
@@ -109,6 +111,7 @@ static const char *algo_names[] = {
 	"heavy",
 	"hmq1725",
 	"honeycomb",
+	"hsd",
 	"hsr",
 	"html",
 	"keccak",
@@ -143,6 +146,7 @@ static const char *algo_names[] = {
 	"skein2",
 	"skunk",
 	"s3",
+	"tellor",
 	"timetravel",
 	"tribus",
 	"bitcore",
@@ -229,6 +233,8 @@ static inline int algo_to_int(char* arg)
 			i = ALGO_WHIRLPOOL;
 		else if (!strcasecmp("ziftr", arg))
 			i = ALGO_ZR5;
+		else if (!strcasecmp("handshake", arg))
+			i = ALGO_HSD;
 		else
 			i = -1;
 	}

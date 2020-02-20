@@ -314,10 +314,12 @@ int fpga_freq_check_keys(int fd)
 	switch (key) {
 
 	case '+':
-		return fpga_freq_increase(fd);
+		fpga_freq_increase(fd);
+		return key;
 
 	case '-':
-		return fpga_freq_decrease(fd);
+		fpga_freq_decrease(fd);
+		return key;
 		/*
 	case 'C':
 	case 'c':
